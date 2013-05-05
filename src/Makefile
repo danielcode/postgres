@@ -13,6 +13,7 @@ top_builddir = ..
 include Makefile.global
 
 SUBDIRS = \
+	asn1 \
 	common \
 	port \
 	timezone \

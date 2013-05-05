@@ -85,6 +85,9 @@ extern int	optreset;			/* might not be declared by system headers */
 #endif
 
 
+List *raw_asn_parser(int encoding, const char *str, int msglen);
+
+
 /* ----------------
  *		global variables
  * ----------------
@@ -374,6 +377,9 @@ SocketBackend(StringInfo inBuf)
 	 */
 	switch (qtype)
 	{
+		case 'A':				/* ASN query */
+			break;
+
 		case 'Q':				/* simple query */
 			doing_extended_query_message = false;
 			if (PG_PROTOCOL_MAJOR(FrontendProtocol) < 3)
@@ -554,7 +560,7 @@ client_read_ended(void)
  * commands are not processed any further than the raw parse stage.
  */
 List *
-pg_parse_query(const char *query_string)
+pg_parse_query(const char *query_string, int type, int encoding, int msglen)
 {
 	List	   *raw_parsetree_list;
 
@@ -563,7 +569,11 @@ pg_parse_query(const char *query_string)
 	if (log_parser_stats)
 		ResetUsage();
 
-	raw_parsetree_list = raw_parser(query_string);
+	if (type == 0)
+		raw_parsetree_list = raw_parser(query_string);
+	else
+		raw_parsetree_list = raw_asn_parser(encoding, query_string, msglen);
+
 
 	if (log_parser_stats)
 		ShowUsage("PARSER STATISTICS");
@@ -585,6 +595,7 @@ pg_parse_query(const char *query_string)
 
 	return raw_parsetree_list;
 }
+
 
 /*
  * Given a raw parsetree (gram.y output), and optionally information about
@@ -825,7 +836,7 @@ pg_plan_queries(List *querytrees, int cursorOptions, ParamListInfo boundParams)
  * Execute a "simple Query" protocol message.
  */
 static void
-exec_simple_query(const char *query_string)
+exec_simple_query(const char *query_string, const int type, const int encoding, const int msglen)
 {
 	CommandDest dest = whereToSendOutput;
 	MemoryContext oldcontext;
@@ -879,7 +890,10 @@ exec_simple_query(const char *query_string)
 	 * Do basic parsing of the query or queries (this should be safe even if
 	 * we are in aborted transaction state!)
 	 */
-	parsetree_list = pg_parse_query(query_string);
+	if (type == 0)
+		parsetree_list = pg_parse_query(query_string, 0, 0, 0);
+	else
+		parsetree_list = pg_parse_query(query_string, 1, encoding, msglen);
 
 	/* Log immediately if dictated by log_statement */
 	if (check_log_statement(parsetree_list))
@@ -1134,6 +1148,7 @@ exec_simple_query(const char *query_string)
 	debug_query_string = NULL;
 }
 
+
 /*
  * exec_parse_message
  *
@@ -1217,7 +1232,7 @@ exec_parse_message(const char *query_string,	/* string to execute */
 	 * Do basic parsing of the query or queries (this should be safe even if
 	 * we are in aborted transaction state!)
 	 */
-	parsetree_list = pg_parse_query(query_string);
+	parsetree_list = pg_parse_query(query_string, 0, 0, 0);
 
 	/*
 	 * We only allow a single user statement in a prepared statement. This is
@@ -3969,6 +3984,26 @@ PostgresMain(int argc, char *argv[],
 
 		switch (firstchar)
 		{
+			case 'A':        /* ASN.1 Encoded Query */
+				{
+					int			encoding;
+					int         query_length;
+					const char *query_string;
+
+					/* Set statement_timestamp() */
+					SetCurrentStatementStartTimestamp();
+
+					encoding 	 = pq_getmsgint(&input_message, 4);
+					query_length = pq_getmsgint(&input_message, 4);
+					query_string = pq_getmsgbytes(&input_message, query_length);
+					pq_getmsgend(&input_message);
+
+					exec_simple_query(query_string, 1, encoding, query_length);
+
+					send_ready_for_query = true;
+				}
+				break;
+
 			case 'Q':			/* simple query */
 				{
 					const char *query_string;
@@ -3982,7 +4017,7 @@ PostgresMain(int argc, char *argv[],
 					if (am_walsender)
 						exec_replication_command(query_string);
 					else
-						exec_simple_query(query_string);
+						exec_simple_query(query_string, 0, 0, 0);
 
 					send_ready_for_query = true;
 				}

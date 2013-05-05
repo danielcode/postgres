@@ -235,3 +235,24 @@ AC_DEFUN([PGAC_CHECK_STRIP],
   AC_SUBST(STRIP_STATIC_LIB)
   AC_SUBST(STRIP_SHARED_LIB)
 ])# PGAC_CHECK_STRIP
+
+# PGAC_PATH_ASN1C
+# ---------------
+# Look for asn1c, set the output variable ASN1C to its path if found.
+
+AC_DEFUN([PGAC_PATH_ASN1C],
+[# Let the user override the search
+if test -z "$ASN1C"; then
+  AC_PATH_PROGS(ASN1C, asn1c)
+fi
+
+if test -z "$ASN1C"; then
+  AC_MSG_WARN([
+*** Without asn1c you will not be able to build PostgreSQL from Git nor
+*** change any of the PDU definition files.  (If you are using the
+*** official distribution of PostgreSQL then you do not need to worry
+*** about this, because the asn1c output is pre-generated.)])
+fi
+# We don't need AC_SUBST(ASN1C) because AC_PATH_PROG did it
+AC_SUBST(ASN1CFLAGS)
+])# PGAC_PATH_ASN1C

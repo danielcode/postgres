@@ -204,7 +204,7 @@ PTHREAD_LIBS		= @PTHREAD_LIBS@
 # Compilers
 
 CPP = @CPP@
-CPPFLAGS = @CPPFLAGS@
+CPPFLAGS = @CPPFLAGS@ -I$(top_srcdir)/src/include/asn1
 
 ifdef PGXS
 override CPPFLAGS := -I$(includedir_server) -I$(includedir_internal) $(CPPFLAGS)
@@ -223,6 +223,7 @@ CFLAGS_VECTOR = @CFLAGS_VECTOR@
 
 # Kind-of compilers
 
+ASN1C = @ASN1C@
 BISON = @BISON@
 BISONFLAGS = @BISONFLAGS@ $(YFLAGS)
 FLEX = @FLEX@

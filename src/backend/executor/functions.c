@@ -678,7 +678,7 @@ init_sql_fcache(FmgrInfo *finfo, Oid collation, bool lazyEvalOK)
 	 * but we'll not worry about it until the module is rewritten to use
 	 * plancache.c.
 	 */
-	raw_parsetree_list = pg_parse_query(fcache->src);
+	raw_parsetree_list = pg_parse_query(fcache->src, 0, 0, 0);
 
 	queryTree_list = NIL;
 	flat_query_list = NIL;

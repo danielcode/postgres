@@ -52,7 +52,7 @@ static bool static_std_strings = false;
 
 static PGEvent *dupEvents(PGEvent *events, int count);
 static bool pqAddTuple(PGresult *res, PGresAttValue *tup);
-static bool PQsendQueryStart(PGconn *conn);
+bool PQsendQueryStart(PGconn *conn);
 static int PQsendQueryGuts(PGconn *conn,
 				const char *command,
 				const char *stmtName,
@@ -63,8 +63,8 @@ static int PQsendQueryGuts(PGconn *conn,
 				const int *paramFormats,
 				int resultFormat);
 static void parseInput(PGconn *conn);
-static bool PQexecStart(PGconn *conn);
-static PGresult *PQexecFinish(PGconn *conn);
+bool PQexecStart(PGconn *conn);
+PGresult *PQexecFinish(PGconn *conn);
 static int PQsendDescribe(PGconn *conn, char desc_type,
 			   const char *desc_target);
 static int	check_field_number(const PGresult *res, int field_num);
@@ -1340,7 +1340,7 @@ PQsendQueryPrepared(PGconn *conn,
 /*
  * Common startup code for PQsendQuery and sibling routines
  */
-static bool
+bool
 PQsendQueryStart(PGconn *conn)
 {
 	if (!conn)
@@ -1880,7 +1880,7 @@ PQexecPrepared(PGconn *conn,
 /*
  * Common code for PQexec and sibling routines: prepare to send command
  */
-static bool
+bool
 PQexecStart(PGconn *conn)
 {
 	PGresult   *result;
@@ -1954,7 +1954,7 @@ PQexecStart(PGconn *conn)
 /*
  * Common code for PQexec and sibling routines: wait for command result
  */
-static PGresult *
+PGresult *
 PQexecFinish(PGconn *conn)
 {
 	PGresult   *result;

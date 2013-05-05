@@ -1,0 +1,6 @@
+# src/interfaces/libpqasn1/exports.txt
+# Functions to be exported by libpq DLLs
+tree_to_asn1              1
+PQsendASNQuery            2
+PQASNexec                 3
+symbol_for_ruby_pg        4

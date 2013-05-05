@@ -1,0 +1,81 @@
+SQLQuery DEFINITIONS ::= BEGIN -- Module parameters preamble
+  ASNQuery ::= SEQUENCE OF ASNSelectStmt
+
+  ASNSelectStmt ::= SEQUENCE { -- Definition of SelectStmt type
+    -- distinctClause NULL, -- 
+    targets        SEQUENCE OF ASNResTarget,
+    -- intoClause     NULL, -- 
+    fromClause     SEQUENCE OF ASNFromClause OPTIONAL
+    -- whereClause    NULL, -- 
+    -- groupClause    NULL, -- 
+    -- havingClause   NULL, -- 
+    -- windowClause   NULL, -- 
+  }
+
+  ASNFromClause ::= SEQUENCE OF ASNRangeVar
+
+  ASNRangeVar ::= SEQUENCE {
+    catalogName [0] ASNString OPTIONAL,
+    schemaName  [1] ASNString OPTIONAL,
+    relName     [2] ASNString OPTIONAL
+  }
+
+  ASNColumnRef ::= SEQUENCE {
+    fields ASNColumnRefList
+  }
+
+  ASNColumnRefList ::= SEQUENCE OF ASNColumnRefItem
+    -- items ASNColumnRefItem
+  -- }
+
+  ASNColumnRefItem ::= CHOICE {
+    str  [0] ASNString,
+    star [1] NULL
+  }
+
+  ASNResTarget ::= CHOICE {
+    star                [0] NULL,
+    columnRef           [1] ASNColumnRef,
+    resTargetExpression [2] SEQUENCE {
+      expr     ASNExpression,
+      colLabel ASNString OPTIONAL
+    }
+  }
+
+  ASNExpression ::= CHOICE {
+    intConst    [0] INTEGER,
+    floatConst  [1] REAL,
+    stringConst [2] ASNString,
+    binaryExpr  [3] ASNBinaryExpression
+  }
+
+  ASNBinaryExpression ::= SEQUENCE {
+    lhs      ASNExpression,
+    operator ASNBinaryOperator,
+    rhs      ASNExpression
+  }
+
+  ASNBinaryOperator ::= ENUMERATED {
+    plus,
+    minus,
+    multiply,
+    divide,
+    mod,
+    raise,
+    lt,
+    gt,
+    equal,
+    and,
+    or
+  }
+
+  ASNPlusExpression ::= SEQUENCE {
+    lhs  ASNExpression,
+    rhs  ASNExpression
+  }
+
+  ASNString ::= CHOICE {
+    utf8String  [0] UTF8String,
+    asciiString [1] IA5String
+  }
+END

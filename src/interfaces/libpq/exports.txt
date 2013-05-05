@@ -165,3 +165,12 @@ lo_lseek64                162
 lo_tell64                 163
 lo_truncate64             164
 PQconninfo                165
+PQexecStart               166
+pqHandleSendFailure       167
+PQexecFinish              168
+PQsendQueryStart          169
+pqPutMsgStart             170
+pqPutnchar                171
+pqPutInt                  172
+pqPutMsgEnd               173
+pqFlush                   174

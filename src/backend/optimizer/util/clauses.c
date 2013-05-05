@@ -4119,7 +4119,7 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	 * care about.	Also, we can punt as soon as we detect more than one
 	 * command in the function body.
 	 */
-	raw_parsetree_list = pg_parse_query(src);
+	raw_parsetree_list = pg_parse_query(src, 0, 0, 0);
 	if (list_length(raw_parsetree_list) != 1)
 		goto fail;
 
@@ -4633,7 +4633,7 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	 * rewriting here).  We can fail as soon as we find more than one query,
 	 * though.
 	 */
-	raw_parsetree_list = pg_parse_query(src);
+	raw_parsetree_list = pg_parse_query(src, 0, 0, 0);
 	if (list_length(raw_parsetree_list) != 1)
 		goto fail;
 

@@ -694,7 +694,7 @@ execute_sql_string(const char *sql, const char *filename)
 	/*
 	 * Parse the SQL string into a list of raw parse trees.
 	 */
-	raw_parsetree_list = pg_parse_query(sql);
+	raw_parsetree_list = pg_parse_query(sql, 0, 0, 0);
 
 	/* All output from SELECTs goes to the bit bucket */
 	dest = CreateDestReceiver(DestNone);

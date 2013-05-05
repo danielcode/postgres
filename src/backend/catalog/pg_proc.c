@@ -871,7 +871,7 @@ fmgr_sql_validator(PG_FUNCTION_ARGS)
 		 * We can run the text through the raw parser though; this will at
 		 * least catch silly syntactic errors.
 		 */
-		raw_parsetree_list = pg_parse_query(prosrc);
+		raw_parsetree_list = pg_parse_query(prosrc, 0, 0, 0);
 
 		if (!haspolyarg)
 		{
