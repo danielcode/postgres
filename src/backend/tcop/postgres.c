@@ -69,6 +69,7 @@
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
 #include "utils/lsyscache.h"
+#include "utils/memdebug.h"
 #include "utils/memutils.h"
 #include "utils/ps_status.h"
 #include "utils/snapmgr.h"
@@ -856,6 +857,10 @@ exec_simple_query(const char *query_string, const int type, const int encoding, 
 	pgstat_report_activity(STATE_RUNNING, query_string);
 
 	TRACE_POSTGRESQL_QUERY_START(query_string);
+
+#ifdef USE_VALGRIND
+	VALGRIND_PRINTF("statement: %s\n", query_string);
+#endif
 
 	/*
 	 * We use save_log_statement_stats so ShowUsage doesn't report incorrect
@@ -2910,7 +2915,7 @@ ProcessInterrupts(void)
 			DisableNotifyInterrupt();
 			DisableCatchupInterrupt();
 			ereport(ERROR,
-					(errcode(ERRCODE_QUERY_CANCELED),
+					(errcode(ERRCODE_LOCK_NOT_AVAILABLE),
 					 errmsg("canceling statement due to lock timeout")));
 		}
 		if (get_timeout_indicator(STATEMENT_TIMEOUT, true))
@@ -3637,7 +3642,7 @@ PostgresMain(int argc, char *argv[],
 			pqsignal(SIGQUIT, quickdie);		/* hard crash time */
 		else
 			pqsignal(SIGQUIT, die);		/* cancel current query and exit */
-		InitializeTimeouts();		/* establishes SIGALRM handler */
+		InitializeTimeouts();	/* establishes SIGALRM handler */
 
 		/*
 		 * Ignore failure to write to frontend. Note: if frontend closes
