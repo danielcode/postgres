@@ -729,7 +729,7 @@ extern void ginInsertCleanup(GinState *ginstate,
  * fall back on the non-inline version from itemptr.c. See STATIC_IF_INLINE in
  * c.h.
  */
-#ifdef PG_USE_INLINE
+#ifndef PG_USE_INLINE
 static inline int
 ginCompareItemPointers(ItemPointer a, ItemPointer b)
 {
