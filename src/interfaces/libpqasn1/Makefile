@@ -1,15 +1,15 @@
 #-------------------------------------------------------------------------
 #
-# Makefile for src/interfaces/libpq library
+# Makefile for src/interfaces/libpqasn1 library
 #
 # Portions Copyright (c) 1996-2012, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
-# src/interfaces/libpq/Makefile
+# src/interfaces/libpqasn1/Makefile
 #
 #-------------------------------------------------------------------------
 
-subdir = src/interfaces/libpq
+subdir = src/interfaces/libpqasn1
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
@@ -65,6 +65,9 @@ distprep: libpqasn1-dist.rc
 
 libpqasn1.rc libpqasn1-dist.rc: libpqasn1.rc.in
 	sed -e 's/\(VERSION.*\),0 *$$/\1,'`date '+%y%j' | sed 's/^0*//'`'/' $< >$@
+
+tree_to_asn1.c: % : $(top_srcdir)/src/asn1/%
+	rm -f $@ && $(LN_S) $< .
 
 # Depend on Makefile.global to force rebuild on re-run of configure.
 # (But libpq-dist.rc is shipped in the distribution for shell-less

@@ -69,6 +69,7 @@ extern bool SPI_push_conditional(void);
 extern void SPI_pop_conditional(bool pushed);
 extern void SPI_restore_connection(void);
 extern int	SPI_execute(const char *src, bool read_only, long tcount);
+extern int	SPI_transfer_execute(const char *src, bool read_only, long tcount);
 extern int SPI_execute_plan(SPIPlanPtr plan, Datum *Values, const char *Nulls,
 				 bool read_only, long tcount);
 extern int SPI_execute_plan_with_paramlist(SPIPlanPtr plan,

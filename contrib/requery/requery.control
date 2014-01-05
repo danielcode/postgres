@@ -1,0 +1,5 @@
+# requery extension
+comment = 'extension to test node to SQL and transfer decoding'
+default_version = '0.1'
+module_pathname = '$libdir/requery'
+relocatable = true

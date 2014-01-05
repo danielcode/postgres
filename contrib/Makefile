@@ -45,6 +45,7 @@ SUBDIRS = \
 		pgstattuple	\
 		pg_xlogdump	\
 		postgres_fdw	\
+		requery		\
 		seg		\
 		spi		\
 		tablefunc	\

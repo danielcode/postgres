@@ -34,6 +34,8 @@
 List *
 raw_parser(const char *str)
 {
+	char *sqlString;
+
 	core_yyscan_t yyscanner;
 	base_yy_extra_type yyextra;
 	int			yyresult;
@@ -56,6 +58,13 @@ raw_parser(const char *str)
 
 	if (yyresult)				/* error */
 		return NIL;
+
+	/*
+	elog(WARNING, "Expression Tree: %s", nodeToString((const void *)yyextra.parsetree));
+
+	sqlString = toSQL((const void *)yyextra.parsetree);
+	elog(WARNING, "SQL Conversion: %s", sqlString);
+	*/
 
 	return yyextra.parsetree;
 }

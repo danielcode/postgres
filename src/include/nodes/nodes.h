@@ -511,6 +511,12 @@ extern void *copyObject(const void *obj);
  */
 extern bool equal(const void *a, const void *b);
 
+/*
+ * nodes/transfer.c
+ */
+extern void *toTransferSyntax(const void *obj);
+extern void *fromTransferSyntax(const void *obj);
+extern char *toSQL(const void *obj);
 
 /*
  * Typedefs for identifying qualifier selectivities and plan costs as such.

@@ -34,6 +34,10 @@ ResTarget	*convert_res_target_node(ASNResTarget_t *resTarget);
 Node		*convert_expr(ASNExpression_t *expr);
 Node		*convert_binary_expression(ASNBinaryExpression_t *be);
 
+extern Node *asn1ToIntConst(ASNExpression_t *expr);
+extern Node *asn1ToFloatConst(ASNExpression_t *expr);
+extern Node *asn1ToStringConst(ASNExpression_t *expr);
+
 
 /*
  * raw_asn_paser
@@ -244,40 +248,20 @@ convert_res_target_node(ASNResTarget_t *resTarget)
 Node *
 convert_expr(ASNExpression_t *expr)
 {
-	A_Const	*cnst		= NULL;
 	Node	*exprNode	= NULL;
-	char	*floatStr	= NULL;
 
 	switch(expr->present)
 	{
 		case ASNExpression_PR_intConst :
-			cnst = makeNode(A_Const);
-			cnst->val.type		= T_Integer;
-			cnst->val.val.ival	= expr->choice.intConst;
-			cnst->location		= 0;
-
-			exprNode = (Node *)cnst;
+			exprNode = asn1ToIntConst(expr);
 			break;
 
 		case ASNExpression_PR_floatConst :
-			floatStr = (char *)palloc(64);
-			snprintf(floatStr, 63, "%lf", expr->choice.floatConst);
-
-			cnst = makeNode(A_Const);
-			cnst->val.type		= T_Float;
-			cnst->val.val.str	= floatStr;
-			cnst->location		= 0;
-
-			exprNode = (Node *)cnst;
+			exprNode = asn1ToFloatConst(expr);
 			break;
 
 		case ASNExpression_PR_stringConst :
-			cnst = makeNode(A_Const);
-			cnst->val.type		= T_String;
-			cnst->val.val.str	= strdup((char *)expr->choice.stringConst.choice.asciiString.buf);
-			cnst->location		= 0;
-			
-			exprNode = (Node *)cnst;
+			exprNode = asn1ToStringConst(expr);
 			break;
 
 		case ASNExpression_PR_binaryExpr :

@@ -139,4 +139,12 @@ libpqparser:
 	cp src/port/libpgport_srv.a $(DESTDIR)$(libdir)
 	cp libpqparser.a $(DESTDIR)$(libdir)/
 
+LIBPQPARSER2OBJS= $(shell cat src/backend/parser/objfiles.txt)
+
+libpqparser2:
+	ar cr libpqparser2.a $(LIBPQPARSEROBJS)
+	ranlib libpqparser2.a
+	# cp src/port/libpgport_srv.a $(DESTDIR)$(libdir)
+	cp libpqparser2.a $(DESTDIR)$(libdir)/
+
 .PHONY: dist distdir distcheck docs install-docs world check-world install-world installcheck-world

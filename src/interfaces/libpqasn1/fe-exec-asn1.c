@@ -22,40 +22,25 @@
 
 #include "mb/pg_wchar.h"
 
-extern bool PQsendQueryStart(PGconn *conn);
-
-int		  PQsendASNQuery(PGconn *conn, const char *query);
-PGresult *PQASNexec(PGconn *conn, const char *query);
-void	  symbol_for_ruby_pg(void);
-
 /*
  * ASN.1 related
  */
 #include "nodes/parsenodes.h"
 #include "ASNQuery.h"
-ASNQuery_t *tree_to_asn1(List *);
-List *raw_parser(const char *);
-bool PQexecStart(PGconn *conn);
+#include "pg-asn1-encode.h"
+
+extern bool PQsendQueryStart(PGconn *conn);
+extern struct transferBuffer *pg_asn1_encode(List *l, int encoding);
+extern void	pg_asn1_buffer_free(struct transferBuffer *transferBuffer);
+
+
+int		  PQsendASNQuery(PGconn *conn, const char *query);
+PGresult *PQASNexec(PGconn *conn, const char *query);
+void	  symbol_for_ruby_pg(void);
+
+List	 *raw_parser(const char *);
 PGresult *PQexecFinish(PGconn *conn);
-asn_app_consume_bytes_f consume_bytes;
-
-struct bufferInfo
-{
-	char	*buffer;
-	int		 offset;
-	int		 length;
-};
-
-int consume_bytes(const void *buffer, size_t size, void *application_specific_key)
-{
-	struct bufferInfo *bufferInfo = (struct bufferInfo *)application_specific_key;
-
-	memcpy((void *)(bufferInfo->buffer + bufferInfo->offset), buffer, size);
-
-	bufferInfo->offset += size;
-
-	return 0;
-}
+bool	  PQexecStart(PGconn *conn);
 
 /*
  * PQsendASNQuery
@@ -63,74 +48,35 @@ int consume_bytes(const void *buffer, size_t size, void *application_specific_ke
  *
  * Returns: 1 if successfully submitted
  *			0 if error (conn->errorMessage is set)
+ *
+ * NOTES
+ * XXXXX - when is it safe to free bufferInfo / buffer?
  */
 int
 PQsendASNQuery(PGconn *conn, const char *query)
 {
-	int encoding = 0;
-
-	/*
-	 * Additional code to support ASN.1 encoding
-	 */
+	struct transferBuffer *transferBuffer = NULL;
 	List *l = NULL;
 
-	char buffer[32768];
-	asn_enc_rval_t	  ec;
-	struct bufferInfo bufferInfo;
-	ASNQuery_t	 *queryStmt;
+	int encoding = 0;
 
 	/* check the argument */
 	if (!query)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
-						libpq_gettext("command string is a null pointer\n"));
+						  libpq_gettext("command string is a null pointer\n"));
 		return 0;
 	}
 
 	l = raw_parser(query);
-	queryStmt = tree_to_asn1(l);
-
-	bufferInfo.buffer = buffer;
-	bufferInfo.offset = 0;
-	bufferInfo.length = 32768;
-
-	if (encoding == 0)
-	{
-		ec = xer_encode(&asn_DEF_ASNQuery, (void *)queryStmt, XER_F_CANONICAL,
-		(asn_app_consume_bytes_f *)consume_bytes, (void *)&bufferInfo);
-		if (ec.encoded == -1)
-		{
-			asn_DEF_ASNQuery.free_struct(&asn_DEF_ASNQuery, queryStmt, 0);
-			return 0;
-		}
-	}
-	else if (encoding == 1)
-	{
-		ec = der_encode(&asn_DEF_ASNQuery, (void *)queryStmt,
-		(asn_app_consume_bytes_f *)consume_bytes, (void *)&bufferInfo);
-		if (ec.encoded == -1)
-		{
-			asn_DEF_ASNQuery.free_struct(&asn_DEF_ASNQuery, queryStmt, 0);
-			return 0;
-		}
-	}
-	else if (encoding == 2)
-	{
-		ec = uper_encode(&asn_DEF_ASNQuery, (void *)queryStmt,
-		(asn_app_consume_bytes_f *)consume_bytes, (void *)&bufferInfo);
-		if (ec.encoded == -1)
-		{
-			asn_DEF_ASNQuery.free_struct(&asn_DEF_ASNQuery, queryStmt, 0);
-			return 0;
-		}
-	}
+	transferBuffer = pg_asn1_encode(l, encoding);
 
 	/*
 	 * Almost the same PQsendQuery code
 	 */
 	if (!PQsendQueryStart(conn))
 	{
-		asn_DEF_ASNQuery.free_struct(&asn_DEF_ASNQuery, queryStmt, 0);
+		pg_asn1_buffer_free(transferBuffer);
 		return 0;
 	}
 
@@ -138,17 +84,17 @@ PQsendASNQuery(PGconn *conn, const char *query)
 	/* construct the outgoing Query message */
 	if (pqPutMsgStart('A', false, conn) < 0 ||
 		pqPutInt(encoding, 4, conn) < 0 || /* Encoding */
-		pqPutInt(bufferInfo.offset, 4, conn) < 0 ||
-		pqPutnchar(buffer, bufferInfo.offset, conn) < 0 ||
+		pqPutInt(transferBuffer->bufferInfo.offset, 4, conn) < 0 ||
+		pqPutnchar(transferBuffer->bufferInfo.buffer, transferBuffer->bufferInfo.offset, conn) < 0 ||
 		pqPutMsgEnd(conn) < 0)
 	{
-		asn_DEF_ASNQuery.free_struct(&asn_DEF_ASNQuery, queryStmt, 0);
+		pg_asn1_buffer_free(transferBuffer);
 		pqHandleSendFailure(conn);
 		return 0;
 	}
 
 	/* No need to keep the encoded data around anymore */
-	asn_DEF_ASNQuery.free_struct(&asn_DEF_ASNQuery, queryStmt, 0);
+	pg_asn1_buffer_free(transferBuffer);
 
 	/* remember we are using simple query protocol */
 	conn->queryclass = PGQUERY_SIMPLE;

@@ -34,6 +34,8 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+#include "asn1/ASNQuery.h"
+
 
 uint32		SPI_processed = 0;
 Oid			SPI_lastoid = InvalidOid;
@@ -52,6 +54,7 @@ static Portal SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 static void _SPI_prepare_plan(const char *src, SPIPlanPtr plan);
 
 static void _SPI_prepare_oneshot_plan(const char *src, SPIPlanPtr plan);
+static void _SPI_prepare_oneshot_asn_plan(const char *src, SPIPlanPtr plan);
 
 static int _SPI_execute_plan(SPIPlanPtr plan, ParamListInfo paramLI,
 				  Snapshot snapshot, Snapshot crosscheck_snapshot,
@@ -76,6 +79,10 @@ static int	_SPI_end_call(bool procmem);
 static MemoryContext _SPI_execmem(void);
 static MemoryContext _SPI_procmem(void);
 static bool _SPI_checktuples(void);
+
+extern ASNQuery_t *tree_to_asn1(List *l);
+extern List		  *asn1_to_tree(ASNQuery_t *query);
+extern List		  *raw_asn_parser(int encoding, const char *str, int msglen);
 
 
 /* =================== interface functions =================== */
@@ -357,6 +364,34 @@ SPI_execute(const char *src, bool read_only, long tcount)
 	plan.cursor_options = 0;
 
 	_SPI_prepare_oneshot_plan(src, &plan);
+
+	res = _SPI_execute_plan(&plan, NULL,
+							InvalidSnapshot, InvalidSnapshot,
+							read_only, true, tcount);
+
+	_SPI_end_call(true);
+	return res;
+}
+
+/* Parse, plan, and execute a query string, running through transfer encdode / decode process first */
+int
+SPI_transfer_execute(const char *src, bool read_only, long tcount)
+{
+	_SPI_plan	plan;
+	int			res;
+
+	if (src == NULL || tcount < 0)
+		return SPI_ERROR_ARGUMENT;
+
+	res = _SPI_begin_call(true);
+	if (res < 0)
+		return res;
+
+	memset(&plan, 0, sizeof(_SPI_plan));
+	plan.magic = _SPI_PLAN_MAGIC;
+	plan.cursor_options = 0;
+
+	_SPI_prepare_oneshot_asn_plan(src, &plan);
 
 	res = _SPI_execute_plan(&plan, NULL,
 							InvalidSnapshot, InvalidSnapshot,
@@ -1856,6 +1891,65 @@ _SPI_prepare_oneshot_plan(const char *src, SPIPlanPtr plan)
 	plancache_list = NIL;
 
 	foreach(list_item, raw_parsetree_list)
+	{
+		Node	   *parsetree = (Node *) lfirst(list_item);
+		CachedPlanSource *plansource;
+
+		plansource = CreateOneShotCachedPlan(parsetree,
+											 src,
+											 CreateCommandTag(parsetree));
+
+		plancache_list = lappend(plancache_list, plansource);
+	}
+
+	plan->plancache_list = plancache_list;
+	plan->oneshot = true;
+
+	/*
+	 * Pop the error context stack
+	 */
+	error_context_stack = spierrcontext.previous;
+}
+
+
+/*
+ * _SPI_prepare_oneshot_asn_plan
+ * Same as above, but:
+ * o after parsing, create transfer structures
+ * o then, convert transfer structures to node tree
+ * Used for testing.
+ */
+static void
+_SPI_prepare_oneshot_asn_plan(const char *src, SPIPlanPtr plan)
+{
+	List	   *raw_parsetree_list;
+	List	   *asn_tree_list;
+	List	   *plancache_list;
+	ListCell   *list_item;
+	ASNQuery_t *transfer;
+	ErrorContextCallback spierrcontext;
+
+	/*
+	 * Setup error traceback support for ereport()
+	 */
+	spierrcontext.callback = _SPI_error_callback;
+	spierrcontext.arg = (void *) src;
+	spierrcontext.previous = error_context_stack;
+	error_context_stack = &spierrcontext;
+
+	/*
+	 * Parse the request string into a list of raw parse trees.
+	 */
+	raw_parsetree_list = pg_parse_query(src, 0, 0, 0);
+	transfer		   = tree_to_asn1(raw_parsetree_list);
+	asn_tree_list	   = asn1_to_tree(transfer);
+
+	/*
+	 * Construct plancache entries, but don't do parse analysis yet.
+	 */
+	plancache_list = NIL;
+
+	foreach(list_item, asn_tree_list)
 	{
 		Node	   *parsetree = (Node *) lfirst(list_item);
 		CachedPlanSource *plansource;
