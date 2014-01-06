@@ -781,7 +781,7 @@ extern uint32 ginMergeItemPointers(ItemPointerData *dst,
  * fall back on the non-inline version from itemptr.c. See STATIC_IF_INLINE in
  * c.h.
  */
-#ifndef PG_USE_INLINE
+#ifdef PG_USE_INLINE
 static inline int
 ginCompareItemPointers(ItemPointer a, ItemPointer b)
 {
