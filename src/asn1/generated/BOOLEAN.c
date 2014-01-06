@@ -31,7 +31,12 @@ asn_TYPE_descriptor_t asn_DEF_BOOLEAN = {
 	sizeof(asn_DEF_BOOLEAN_tags) / sizeof(asn_DEF_BOOLEAN_tags[0]),
 	0,	/* No PER visible constraints */
 	0, 0,	/* No members */
-	0	/* No specifics */
+	0,	/* No specifics */
+	ASN1_TYPE_BOOLEAN,
+	0, /* Not Anonymous */
+	sizeof(BOOLEAN_t),
+	0, /* Not generated */
+	"asn_DEF_BOOLEAN" /* Symbol string */
 };
 
 /*
@@ -161,10 +166,7 @@ BOOLEAN__xer_body_decode(asn_TYPE_descriptor_t *td, void *sptr, const void *chun
 		}
 		return XPBD_BODY_CONSUMED;
 	} else {
-		if(xer_is_whitespace(chunk_buf, chunk_size))
-			return XPBD_NOT_BODY_IGNORE;
-		else
-			return XPBD_BROKEN_ENCODING;
+		return XPBD_BROKEN_ENCODING;
 	}
 }
 
@@ -257,7 +259,7 @@ BOOLEAN_decode_uper(asn_codec_ctx_t *opt_codec_ctx, asn_TYPE_descriptor_t *td,
 	switch(per_get_few_bits(pd, 1)) {
 	case 1: *st = 1; break;
 	case 0: *st = 0; break;
-	case -1: default: _ASN_DECODE_FAILED;
+	case -1: default: _ASN_DECODE_STARVED;
 	}
 
 	ASN_DEBUG("%s decoded as %s", td->name, *st ? "TRUE" : "FALSE");
@@ -272,13 +274,14 @@ asn_enc_rval_t
 BOOLEAN_encode_uper(asn_TYPE_descriptor_t *td,
 	asn_per_constraints_t *constraints, void *sptr, asn_per_outp_t *po) {
 	const BOOLEAN_t *st = (const BOOLEAN_t *)sptr;
-	asn_enc_rval_t er;
+	asn_enc_rval_t er = { 0, 0, 0 };
 
 	(void)constraints;
 
 	if(!st) _ASN_ENCODE_FAILED;
 
-	per_put_few_bits(po, *st ? 1 : 0, 1);
+	if(per_put_few_bits(po, *st ? 1 : 0, 1))
+		_ASN_ENCODE_FAILED;
 
 	_ASN_ENCODED_OK(er);
 }

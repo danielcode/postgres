@@ -34,7 +34,7 @@
 #undef	ADVANCE
 #define	ADVANCE(num_bytes)	do {		\
 		size_t num = num_bytes;		\
-		ptr = ((const char *)ptr) + num;\
+		ptr = ((const void *)ptr) + num;\
 		size -= num;			\
 		if(ctx->left >= 0)		\
 			ctx->left -= num;	\
@@ -100,7 +100,7 @@ SET_OF_decode_ber(asn_codec_ctx_t *opt_codec_ctx, asn_TYPE_descriptor_t *td,
 	/*
 	 * Restore parsing context.
 	 */
-	ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
+	ctx = (asn_struct_ctx_t *)((void *)st + specs->ctx_offset);
 	
 	/*
 	 * Start to parse where left previously
@@ -227,6 +227,8 @@ SET_OF_decode_ber(asn_codec_ctx_t *opt_codec_ctx, asn_TYPE_descriptor_t *td,
 			}
 			/* Fall through */
 		case RC_FAIL: /* Fatal error */
+			ASN_STRUCT_FREE(*elm->type, ctx->ptr);
+			ctx->ptr = 0;
 			RETURN(RC_FAIL);
 		} /* switch(rval) */
 		
@@ -455,7 +457,7 @@ SET_OF_encode_der(asn_TYPE_descriptor_t *td, void *ptr,
 #undef	XER_ADVANCE
 #define	XER_ADVANCE(num_bytes)	do {			\
 		size_t num = num_bytes;			\
-		buf_ptr = ((const char *)buf_ptr) + num;\
+		buf_ptr = ((const void *)buf_ptr) + num;\
 		size -= num;				\
 		consumed_myself += num;			\
 	} while(0)
@@ -503,7 +505,7 @@ SET_OF_decode_xer(asn_codec_ctx_t *opt_codec_ctx, asn_TYPE_descriptor_t *td,
 	/*
 	 * Restore parsing context.
 	 */
-	ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
+	ctx = (asn_struct_ctx_t *)((void *)st + specs->ctx_offset);
 
 	/*
 	 * Phases of XER/XML processing:
@@ -625,7 +627,7 @@ SET_OF_encode_xer_callback(const void *buffer, size_t size, void *key) {
 		t->buffer = p;
 		t->size = newsize;
 	}
-	memcpy((char *)t->buffer + t->offset, buffer, size);
+	memcpy((void *)t->buffer + t->offset, buffer, size);
 	t->offset += size;
 	return 0;
 }
@@ -787,8 +789,10 @@ SET_OF_print(asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
 void
 SET_OF_free(asn_TYPE_descriptor_t *td, void *ptr, int contents_only) {
 	if(td && ptr) {
+		asn_SET_OF_specifics_t *specs;
 		asn_TYPE_member_t *elm = td->elements;
 		asn_anonymous_set_ *list = _A_SET_FROM_VOID(ptr);
+		asn_struct_ctx_t *ctx;	/* Decoder context */
 		int i;
 
 		/*
@@ -803,6 +807,13 @@ SET_OF_free(asn_TYPE_descriptor_t *td, void *ptr, int contents_only) {
 		list->count = 0;	/* No meaningful elements left */
 
 		asn_set_empty(list);	/* Remove (list->array) */
+
+		specs = (asn_SET_OF_specifics_t *)td->specifics;
+		ctx = (asn_struct_ctx_t *)((void *)ptr + specs->ctx_offset);
+		if(ctx->ptr) {
+			ASN_STRUCT_FREE(*elm->type, ctx->ptr);
+			ctx->ptr = 0;
+		}
 
 		if(!contents_only) {
 			FREEMEM(ptr);
@@ -819,7 +830,7 @@ SET_OF_constraint(asn_TYPE_descriptor_t *td, const void *sptr,
 	int i;
 
 	if(!sptr) {
-		_ASN_CTFAIL(app_key, td,
+		_ASN_CTFAIL(app_key, td, sptr,
 			"%s: value not given (%s:%d)",
 			td->name, __FILE__, __LINE__);
 		return -1;
@@ -904,7 +915,7 @@ SET_OF_decode_uper(asn_codec_ctx_t *opt_codec_ctx, asn_TYPE_descriptor_t *td,
 			nelems = uper_get_length(pd,
 				ct ? ct->effective_bits : -1, &repeat);
 			ASN_DEBUG("Got to decode %d elements (eff %d)",
-				(int)nelems, (int)ct ? ct->effective_bits : -1);
+				(int)nelems, (int)(ct ? ct->effective_bits : -1));
 			if(nelems < 0) _ASN_DECODE_STARVED;
 		}
 
@@ -921,7 +932,7 @@ SET_OF_decode_uper(asn_codec_ctx_t *opt_codec_ctx, asn_TYPE_descriptor_t *td,
 				ASN_DEBUG("Failed to add element into %s",
 					td->name);
 				/* Fall through */
-				rv.code == RC_FAIL;
+				rv.code = RC_FAIL;
 			} else {
 				ASN_DEBUG("Failed decoding %s of %s (SET OF)",
 					elm->type->name, td->name);

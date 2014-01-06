@@ -33,13 +33,15 @@ SQLQuery DEFINITIONS ::= BEGIN -- Module parameters preamble
     star [1] NULL
   }
 
+  ASNResTargetExpression ::= SEQUENCE {
+    expr     ASNExpression,
+    colLabel ASNString OPTIONAL
+  }
+
   ASNResTarget ::= CHOICE {
     star                [0] NULL,
     columnRef           [1] ASNColumnRef,
-    resTargetExpression [2] SEQUENCE {
-      expr     ASNExpression,
-      colLabel ASNString OPTIONAL
-    }
+    resTargetExpression [2] ASNResTargetExpression
   }
 
   ASNExpression ::= CHOICE {

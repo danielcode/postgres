@@ -4,13 +4,14 @@
  * 	found in "../SQLQuery.asn1"
  */
 
-#ifndef	_ASNRangeVar_H_
-#define	_ASNRangeVar_H_
+#ifndef	_ASNResTargetExpression_H_
+#define	_ASNResTargetExpression_H_
 
 
 #include <asn_application.h>
 
 /* Including external dependencies */
+#include "ASNExpression.h"
 #include <constr_SEQUENCE.h>
 
 #ifdef __cplusplus
@@ -20,18 +21,17 @@ extern "C" {
 /* Forward declarations */
 struct ASNString;
 
-/* ASNRangeVar */
-typedef struct ASNRangeVar {
-	struct ASNString	*catalogName	/* OPTIONAL */;
-	struct ASNString	*schemaName	/* OPTIONAL */;
-	struct ASNString	*relName	/* OPTIONAL */;
+/* ASNResTargetExpression */
+typedef struct ASNResTargetExpression {
+	ASNExpression_t	 expr;
+	struct ASNString	*colLabel	/* OPTIONAL */;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} ASNRangeVar_t;
+} ASNResTargetExpression_t;
 
 /* Implementation */
-extern asn_TYPE_descriptor_t asn_DEF_ASNRangeVar;
+extern asn_TYPE_descriptor_t asn_DEF_ASNResTargetExpression;
 
 #ifdef __cplusplus
 }
@@ -40,5 +40,5 @@ extern asn_TYPE_descriptor_t asn_DEF_ASNRangeVar;
 /* Referred external types */
 #include "ASNString.h"
 
-#endif	/* _ASNRangeVar_H_ */
+#endif	/* _ASNResTargetExpression_H_ */
 #include <asn_internal.h>
