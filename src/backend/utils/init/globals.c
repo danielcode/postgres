@@ -93,8 +93,6 @@ bool		ExitOnAnyError = false;
 int			DateStyle = USE_ISO_DATES;
 int			DateOrder = DATEORDER_MDY;
 int			IntervalStyle = INTSTYLE_POSTGRES;
-bool		HasCTZSet = false;
-int			CTimeZone = 0;
 
 bool		enableFsync = true;
 bool		allowSystemTableMods = false;
@@ -109,6 +107,7 @@ int			maintenance_work_mem = 16384;
  */
 int			NBuffers = 1000;
 int			MaxConnections = 90;
+int			max_worker_processes = 8;
 int			MaxBackends = 0;
 
 int			VacuumCostPageHit = 1;		/* GUC parameters for vacuum */
@@ -123,5 +122,3 @@ int			VacuumPageDirty = 0;
 
 int			VacuumCostBalance = 0;		/* working state for vacuum */
 bool		VacuumCostActive = false;
-
-int			GinFuzzySearchLimit = 0;

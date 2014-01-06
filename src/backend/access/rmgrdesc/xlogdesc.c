@@ -28,6 +28,7 @@ const struct config_enum_entry wal_level_options[] = {
 	{"minimal", WAL_LEVEL_MINIMAL, false},
 	{"archive", WAL_LEVEL_ARCHIVE, false},
 	{"hot_standby", WAL_LEVEL_HOT_STANDBY, false},
+	{"logical", WAL_LEVEL_LOGICAL, false},
 	{NULL, 0, false}
 };
 
@@ -62,7 +63,7 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 	}
 	else if (info == XLOG_NOOP)
 	{
-		appendStringInfo(buf, "xlog no-op");
+		appendStringInfoString(buf, "xlog no-op");
 	}
 	else if (info == XLOG_NEXTOID)
 	{
@@ -73,7 +74,7 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 	}
 	else if (info == XLOG_SWITCH)
 	{
-		appendStringInfo(buf, "xlog switch");
+		appendStringInfoString(buf, "xlog switch");
 	}
 	else if (info == XLOG_RESTORE_POINT)
 	{
@@ -117,8 +118,9 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 			}
 		}
 
-		appendStringInfo(buf, "parameter change: max_connections=%d max_prepared_xacts=%d max_locks_per_xact=%d wal_level=%s",
+		appendStringInfo(buf, "parameter change: max_connections=%d max_worker_processes=%d max_prepared_xacts=%d max_locks_per_xact=%d wal_level=%s",
 						 xlrec.MaxConnections,
+						 xlrec.max_worker_processes,
 						 xlrec.max_prepared_xacts,
 						 xlrec.max_locks_per_xact,
 						 wal_level_str);
@@ -140,5 +142,5 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 						 timestamptz_to_str(xlrec.end_time));
 	}
 	else
-		appendStringInfo(buf, "UNKNOWN");
+		appendStringInfoString(buf, "UNKNOWN");
 }

@@ -121,7 +121,8 @@ static List *build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 				  SaOpControl saop_control, ScanTypeControl scantype);
 static List *build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
 				   List *clauses, List *other_clauses);
-static List *drop_indexable_join_clauses(RelOptInfo *rel, List *clauses);
+static List *generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
+						 List *clauses, List *other_clauses);
 static Path *choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel,
 				  List *paths);
 static int	path_usage_comparator(const void *a, const void *b);
@@ -141,12 +142,10 @@ static void match_restriction_clauses_to_index(RelOptInfo *rel,
 								   IndexClauseSet *clauseset);
 static void match_join_clauses_to_index(PlannerInfo *root,
 							RelOptInfo *rel, IndexOptInfo *index,
-							Relids lateral_referencers,
 							IndexClauseSet *clauseset,
 							List **joinorclauses);
 static void match_eclass_clauses_to_index(PlannerInfo *root,
 							  IndexOptInfo *index,
-							  Relids lateral_referencers,
 							  IndexClauseSet *clauseset);
 static void match_clauses_to_index(IndexOptInfo *index,
 					   List *clauses,
@@ -220,14 +219,14 @@ static Const *string_to_const(const char *str, Oid datatype);
  *
  * Note: check_partial_indexes() must have been run previously for this rel.
  *
- * Note: in corner cases involving LATERAL appendrel children, it's possible
- * that rel->lateral_relids is nonempty.  Currently, we include lateral_relids
- * into the parameterization reported for each path, but don't take it into
- * account otherwise.  The fact that any such rels *must* be available as
- * parameter sources perhaps should influence our choices of index quals ...
- * but for now, it doesn't seem worth troubling over.  In particular, comments
- * below about "unparameterized" paths should be read as meaning
- * "unparameterized so far as the indexquals are concerned".
+ * Note: in cases involving LATERAL references in the relation's tlist, it's
+ * possible that rel->lateral_relids is nonempty.  Currently, we include
+ * lateral_relids into the parameterization reported for each path, but don't
+ * take it into account otherwise.	The fact that any such rels *must* be
+ * available as parameter sources perhaps should influence our choices of
+ * index quals ... but for now, it doesn't seem worth troubling over.
+ * In particular, comments below about "unparameterized" paths should be read
+ * as meaning "unparameterized so far as the indexquals are concerned".
  */
 void
 create_index_paths(PlannerInfo *root, RelOptInfo *rel)
@@ -236,7 +235,6 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	List	   *bitindexpaths;
 	List	   *bitjoinpaths;
 	List	   *joinorclauses;
-	Relids		lateral_referencers;
 	IndexClauseSet rclauseset;
 	IndexClauseSet jclauseset;
 	IndexClauseSet eclauseset;
@@ -245,23 +243,6 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	/* Skip the whole mess if no indexes */
 	if (rel->indexlist == NIL)
 		return;
-
-	/*
-	 * If there are any rels that have LATERAL references to this one, we
-	 * cannot use join quals referencing them as index quals for this one,
-	 * since such rels would have to be on the inside not the outside of a
-	 * nestloop join relative to this one.	Create a Relids set listing all
-	 * such rels, for use in checks of potential join clauses.
-	 */
-	lateral_referencers = NULL;
-	foreach(lc, root->lateral_info_list)
-	{
-		LateralJoinInfo *ljinfo = (LateralJoinInfo *) lfirst(lc);
-
-		if (bms_is_member(rel->relid, ljinfo->lateral_lhs))
-			lateral_referencers = bms_add_member(lateral_referencers,
-												 ljinfo->lateral_rhs);
-	}
 
 	/* Bitmap paths are collected and then dealt with at the end */
 	bitindexpaths = bitjoinpaths = joinorclauses = NIL;
@@ -303,7 +284,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 		 * EquivalenceClasses.	Also, collect join OR clauses for later.
 		 */
 		MemSet(&jclauseset, 0, sizeof(jclauseset));
-		match_join_clauses_to_index(root, rel, index, lateral_referencers,
+		match_join_clauses_to_index(root, rel, index,
 									&jclauseset, &joinorclauses);
 
 		/*
@@ -311,7 +292,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 		 * the index.
 		 */
 		MemSet(&eclauseset, 0, sizeof(eclauseset));
-		match_eclass_clauses_to_index(root, index, lateral_referencers,
+		match_eclass_clauses_to_index(root, index,
 									  &eclauseset);
 
 		/*
@@ -331,8 +312,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	 * restriction list.  Add these to bitindexpaths.
 	 */
 	indexpaths = generate_bitmap_or_paths(root, rel,
-										  rel->baserestrictinfo, NIL,
-										  false);
+										  rel->baserestrictinfo, NIL);
 	bitindexpaths = list_concat(bitindexpaths, indexpaths);
 
 	/*
@@ -340,8 +320,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 	 * the joinclause list.  Add these to bitjoinpaths.
 	 */
 	indexpaths = generate_bitmap_or_paths(root, rel,
-										joinorclauses, rel->baserestrictinfo,
-										  false);
+									   joinorclauses, rel->baserestrictinfo);
 	bitjoinpaths = list_concat(bitjoinpaths, indexpaths);
 
 	/*
@@ -1174,16 +1153,10 @@ build_paths_for_OR(PlannerInfo *root, RelOptInfo *rel,
  * other_clauses is a list of additional clauses that can be assumed true
  * for the purpose of generating indexquals, but are not to be searched for
  * ORs.  (See build_paths_for_OR() for motivation.)
- *
- * If restriction_only is true, ignore OR elements that are join clauses.
- * When using this feature it is caller's responsibility that neither clauses
- * nor other_clauses contain any join clauses that are not ORs, as we do not
- * re-filter those lists.
  */
-List *
+static List *
 generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
-						 List *clauses, List *other_clauses,
-						 bool restriction_only)
+						 List *clauses, List *other_clauses)
 {
 	List	   *result = NIL;
 	List	   *all_clauses;
@@ -1222,9 +1195,6 @@ generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 			{
 				List	   *andargs = ((BoolExpr *) orarg)->args;
 
-				if (restriction_only)
-					andargs = drop_indexable_join_clauses(rel, andargs);
-
 				indlist = build_paths_for_OR(root, rel,
 											 andargs,
 											 all_clauses);
@@ -1233,8 +1203,7 @@ generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 				indlist = list_concat(indlist,
 									  generate_bitmap_or_paths(root, rel,
 															   andargs,
-															   all_clauses,
-														  restriction_only));
+															   all_clauses));
 			}
 			else
 			{
@@ -1243,9 +1212,6 @@ generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 				Assert(IsA(orarg, RestrictInfo));
 				Assert(!restriction_is_or_clause((RestrictInfo *) orarg));
 				orargs = list_make1(orarg);
-
-				if (restriction_only)
-					orargs = drop_indexable_join_clauses(rel, orargs);
 
 				indlist = build_paths_for_OR(root, rel,
 											 orargs,
@@ -1281,34 +1247,6 @@ generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 		}
 	}
 
-	return result;
-}
-
-/*
- * drop_indexable_join_clauses
- *		Remove any indexable join clauses from the list.
- *
- * This is a helper for generate_bitmap_or_paths().  We leave OR clauses
- * in the list whether they are joins or not, since we might be able to
- * extract a restriction item from an OR list.	It's safe to leave such
- * clauses in the list because match_clauses_to_index() will ignore them,
- * so there's no harm in passing such clauses to build_paths_for_OR().
- */
-static List *
-drop_indexable_join_clauses(RelOptInfo *rel, List *clauses)
-{
-	List	   *result = NIL;
-	ListCell   *lc;
-
-	foreach(lc, clauses)
-	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-
-		Assert(IsA(rinfo, RestrictInfo));
-		if (restriction_is_or_clause(rinfo) ||
-			bms_is_subset(rinfo->clause_relids, rel->relids))
-			result = lappend(result, rinfo);
-	}
 	return result;
 }
 
@@ -1374,7 +1312,8 @@ choose_bitmap_and(PlannerInfo *root, RelOptInfo *rel, List *paths)
 	 * we can remove this limitation.  (But note that this also defends
 	 * against flat-out duplicate input paths, which can happen because
 	 * match_join_clauses_to_index will find the same OR join clauses that
-	 * create_or_index_quals has pulled OR restriction clauses out of.)
+	 * extract_restriction_or_clauses has pulled OR restriction clauses out
+	 * of.)
 	 *
 	 * For the same reason, we reject AND combinations in which an index
 	 * predicate clause duplicates another clause.	Here we find it necessary
@@ -1727,8 +1666,7 @@ get_bitmap_tree_required_outer(Path *bitmapqual)
  * These are appended to the initial contents of *quals and *preds (hence
  * caller should initialize those to NIL).
  *
- * This is sort of a simplified version of make_restrictinfo_from_bitmapqual;
- * here, we are not trying to produce an accurate representation of the AND/OR
+ * Note we are not trying to produce an accurate representation of the AND/OR
  * semantics of the Path, but just find out all the base conditions used.
  *
  * The result lists contain pointers to the expressions used in the Path,
@@ -1957,7 +1895,6 @@ match_restriction_clauses_to_index(RelOptInfo *rel, IndexOptInfo *index,
 static void
 match_join_clauses_to_index(PlannerInfo *root,
 							RelOptInfo *rel, IndexOptInfo *index,
-							Relids lateral_referencers,
 							IndexClauseSet *clauseset,
 							List **joinorclauses)
 {
@@ -1969,11 +1906,7 @@ match_join_clauses_to_index(PlannerInfo *root,
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
 		/* Check if clause can be moved to this rel */
-		if (!join_clause_is_movable_to(rinfo, rel->relid))
-			continue;
-
-		/* Not useful if it conflicts with any LATERAL references */
-		if (bms_overlap(rinfo->clause_relids, lateral_referencers))
+		if (!join_clause_is_movable_to(rinfo, rel))
 			continue;
 
 		/* Potentially usable, so see if it matches the index or is an OR */
@@ -1991,7 +1924,6 @@ match_join_clauses_to_index(PlannerInfo *root,
  */
 static void
 match_eclass_clauses_to_index(PlannerInfo *root, IndexOptInfo *index,
-							  Relids lateral_referencers,
 							  IndexClauseSet *clauseset)
 {
 	int			indexcol;
@@ -2012,7 +1944,7 @@ match_eclass_clauses_to_index(PlannerInfo *root, IndexOptInfo *index,
 														 index->rel,
 												  ec_member_matches_indexcol,
 														 (void *) &arg,
-														 lateral_referencers);
+											index->rel->lateral_referencers);
 
 		/*
 		 * We have to check whether the results actually do match the index,
@@ -2644,7 +2576,7 @@ check_partial_indexes(PlannerInfo *root, RelOptInfo *rel)
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
 
 		/* Check if clause can be moved to this rel */
-		if (!join_clause_is_movable_to(rinfo, rel->relid))
+		if (!join_clause_is_movable_to(rinfo, rel))
 			continue;
 
 		clauselist = lappend(clauselist, rinfo);

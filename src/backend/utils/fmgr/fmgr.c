@@ -448,10 +448,7 @@ fetch_finfo_record(void *filehandle, char *funcname)
 	const Pg_finfo_record *inforec;
 	static Pg_finfo_record default_inforec = {0};
 
-	/* Compute name of info func */
-	infofuncname = (char *) palloc(strlen(funcname) + 10);
-	strcpy(infofuncname, "pg_finfo_");
-	strcat(infofuncname, funcname);
+	infofuncname = psprintf("pg_finfo_%s", funcname);
 
 	/* Try to look up the info function */
 	infofunc = (PGFInfoFunction) lookup_external_function(filehandle,
@@ -517,7 +514,7 @@ lookup_C_func(HeapTuple procedureTuple)
 					NULL);
 	if (entry == NULL)
 		return NULL;			/* no such entry */
-	if (entry->fn_xmin == HeapTupleHeaderGetXmin(procedureTuple->t_data) &&
+	if (entry->fn_xmin == HeapTupleHeaderGetRawXmin(procedureTuple->t_data) &&
 		ItemPointerEquals(&entry->fn_tid, &procedureTuple->t_self))
 		return entry;			/* OK */
 	return NULL;				/* entry is out of date */
@@ -555,7 +552,7 @@ record_C_func(HeapTuple procedureTuple,
 					HASH_ENTER,
 					&found);
 	/* OID is already filled in */
-	entry->fn_xmin = HeapTupleHeaderGetXmin(procedureTuple->t_data);
+	entry->fn_xmin = HeapTupleHeaderGetRawXmin(procedureTuple->t_data);
 	entry->fn_tid = procedureTuple->t_self;
 	entry->user_fn = user_fn;
 	entry->inforec = inforec;

@@ -99,6 +99,9 @@ extern IndexTuple tuplesort_getindextuple(Tuplesortstate *state, bool forward,
 extern bool tuplesort_getdatum(Tuplesortstate *state, bool forward,
 				   Datum *val, bool *isNull);
 
+extern bool tuplesort_skiptuples(Tuplesortstate *state, int64 ntuples,
+					 bool forward);
+
 extern void tuplesort_end(Tuplesortstate *state);
 
 extern void tuplesort_get_stats(Tuplesortstate *state,
@@ -106,7 +109,7 @@ extern void tuplesort_get_stats(Tuplesortstate *state,
 					const char **spaceType,
 					long *spaceUsed);
 
-extern int	tuplesort_merge_order(Size allowedMem);
+extern int	tuplesort_merge_order(int64 allowedMem);
 
 /*
  * These routines may only be called if randomAccess was specified 'true'.

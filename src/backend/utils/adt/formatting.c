@@ -600,6 +600,7 @@ typedef enum
 	DCH_MS,
 	DCH_Month,
 	DCH_Mon,
+	DCH_OF,
 	DCH_P_M,
 	DCH_PM,
 	DCH_Q,
@@ -746,6 +747,7 @@ static const KeyWord DCH_keywords[] = {
 	{"MS", 2, DCH_MS, TRUE, FROM_CHAR_DATE_NONE},
 	{"Month", 5, DCH_Month, FALSE, FROM_CHAR_DATE_GREGORIAN},
 	{"Mon", 3, DCH_Mon, FALSE, FROM_CHAR_DATE_GREGORIAN},
+	{"OF", 2, DCH_OF, FALSE, FROM_CHAR_DATE_NONE},		/* O */
 	{"P.M.", 4, DCH_P_M, FALSE, FROM_CHAR_DATE_NONE},	/* P */
 	{"PM", 2, DCH_PM, FALSE, FROM_CHAR_DATE_NONE},
 	{"Q", 1, DCH_Q, TRUE, FROM_CHAR_DATE_NONE}, /* Q */
@@ -874,7 +876,7 @@ static const int DCH_index[KeyWord_INDEX_SIZE] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, DCH_A_D, DCH_B_C, DCH_CC, DCH_DAY, -1,
-	DCH_FX, -1, DCH_HH24, DCH_IDDD, DCH_J, -1, -1, DCH_MI, -1, -1,
+	DCH_FX, -1, DCH_HH24, DCH_IDDD, DCH_J, -1, -1, DCH_MI, -1, DCH_OF,
 	DCH_P_M, DCH_Q, DCH_RM, DCH_SSSS, DCH_TZ, DCH_US, -1, DCH_WW, -1, DCH_Y_YYY,
 	-1, -1, -1, -1, -1, -1, -1, DCH_a_d, DCH_b_c, DCH_cc,
 	DCH_day, -1, DCH_fx, -1, DCH_hh24, DCH_iddd, DCH_j, -1, -1, DCH_mi,
@@ -2502,6 +2504,16 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 					s += strlen(s);
 				}
 				break;
+			case DCH_OF:
+				INVALID_FOR_INTERVAL;
+				sprintf(s, "%+0*ld", S_FM(n->suffix) ? 0 : 3, tm->tm_gmtoff / SECS_PER_HOUR);
+				s += strlen(s);
+				if (tm->tm_gmtoff % SECS_PER_HOUR != 0)
+				{
+					sprintf(s, ":%02ld", (tm->tm_gmtoff % SECS_PER_HOUR) / SECS_PER_MINUTE);
+					s += strlen(s);
+				}
+				break;
 			case DCH_A_D:
 			case DCH_B_C:
 				INVALID_FOR_INTERVAL;
@@ -2915,9 +2927,10 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out)
 				break;
 			case DCH_tz:
 			case DCH_TZ:
+			case DCH_OF:
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("\"TZ\"/\"tz\" format patterns are not supported in to_date")));
+						 errmsg("\"TZ\"/\"tz\"/\"OF\" format patterns are not supported in to_date")));
 			case DCH_A_D:
 			case DCH_B_C:
 			case DCH_a_d:
@@ -4864,7 +4877,7 @@ NUM_processor(FormatNode *node, NUMDesc *Num, char *inout, char *number,
  */
 #define NUM_TOCHAR_prepare \
 do { \
-	len = VARSIZE_ANY_EXHDR(fmt); \
+	int len = VARSIZE_ANY_EXHDR(fmt); \
 	if (len <= 0 || len >= (INT_MAX-VARHDRSZ)/NUM_MAX_ITEM_SIZ)		\
 		PG_RETURN_TEXT_P(cstring_to_text("")); \
 	result	= (text *) palloc0((len * NUM_MAX_ITEM_SIZ) + 1 + VARHDRSZ);	\
@@ -4877,6 +4890,8 @@ do { \
  */
 #define NUM_TOCHAR_finish \
 do { \
+	int		len; \
+									\
 	NUM_processor(format, &Num, VARDATA(result), numstr, plen, sign, true, PG_GET_COLLATION()); \
 									\
 	if (shouldFree)					\
@@ -4948,8 +4963,7 @@ numeric_to_char(PG_FUNCTION_ARGS)
 	FormatNode *format;
 	text	   *result;
 	bool		shouldFree;
-	int			len = 0,
-				plen = 0,
+	int			plen = 0,
 				sign = 0;
 	char	   *numstr,
 			   *orgnum,
@@ -4995,16 +5009,15 @@ numeric_to_char(PG_FUNCTION_ARGS)
 			numstr = (char *) palloc(strlen(orgnum) + 2);
 			*numstr = ' ';
 			strcpy(numstr + 1, orgnum);
-			len = strlen(numstr);
 		}
 		else
 		{
 			numstr = orgnum;
-			len = strlen(orgnum);
 		}
 	}
 	else
 	{
+		int			len;
 		Numeric		val = value;
 
 		if (IS_MULTI(&Num))
@@ -5071,8 +5084,7 @@ int4_to_char(PG_FUNCTION_ARGS)
 	FormatNode *format;
 	text	   *result;
 	bool		shouldFree;
-	int			len = 0,
-				plen = 0,
+	int			plen = 0,
 				sign = 0;
 	char	   *numstr,
 			   *orgnum;
@@ -5098,11 +5110,12 @@ int4_to_char(PG_FUNCTION_ARGS)
 		if (*orgnum == '+')
 			*orgnum = ' ';
 
-		len = strlen(orgnum);
 		numstr = orgnum;
 	}
 	else
 	{
+		int			len;
+
 		if (IS_MULTI(&Num))
 		{
 			orgnum = DatumGetCString(DirectFunctionCall1(int4out,
@@ -5162,8 +5175,7 @@ int8_to_char(PG_FUNCTION_ARGS)
 	FormatNode *format;
 	text	   *result;
 	bool		shouldFree;
-	int			len = 0,
-				plen = 0,
+	int			plen = 0,
 				sign = 0;
 	char	   *numstr,
 			   *orgnum;
@@ -5198,16 +5210,16 @@ int8_to_char(PG_FUNCTION_ARGS)
 			numstr = (char *) palloc(strlen(orgnum) + 2);
 			*numstr = ' ';
 			strcpy(numstr + 1, orgnum);
-			len = strlen(numstr);
 		}
 		else
 		{
 			numstr = orgnum;
-			len = strlen(orgnum);
 		}
 	}
 	else
 	{
+		int			len;
+
 		if (IS_MULTI(&Num))
 		{
 			double		multi = pow((double) 10, (double) Num.multi);
@@ -5269,8 +5281,7 @@ float4_to_char(PG_FUNCTION_ARGS)
 	FormatNode *format;
 	text	   *result;
 	bool		shouldFree;
-	int			len = 0,
-				plen = 0,
+	int			plen = 0,
 				sign = 0;
 	char	   *numstr,
 			   *orgnum,
@@ -5304,13 +5315,13 @@ float4_to_char(PG_FUNCTION_ARGS)
 			if (*orgnum == '+')
 				*orgnum = ' ';
 
-			len = strlen(orgnum);
 			numstr = orgnum;
 		}
 	}
 	else
 	{
 		float4		val = value;
+		int			len;
 
 		if (IS_MULTI(&Num))
 		{
@@ -5373,8 +5384,7 @@ float8_to_char(PG_FUNCTION_ARGS)
 	FormatNode *format;
 	text	   *result;
 	bool		shouldFree;
-	int			len = 0,
-				plen = 0,
+	int			plen = 0,
 				sign = 0;
 	char	   *numstr,
 			   *orgnum,
@@ -5408,13 +5418,13 @@ float8_to_char(PG_FUNCTION_ARGS)
 			if (*orgnum == '+')
 				*orgnum = ' ';
 
-			len = strlen(orgnum);
 			numstr = orgnum;
 		}
 	}
 	else
 	{
 		float8		val = value;
+		int			len;
 
 		if (IS_MULTI(&Num))
 		{

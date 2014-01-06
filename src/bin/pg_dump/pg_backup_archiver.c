@@ -297,8 +297,12 @@ RestoreArchive(Archive *AHX)
 		if (AH->version < K_VERS_1_3)
 			exit_horribly(modulename, "direct database connections are not supported in pre-1.3 archives\n");
 
-		/* XXX Should get this from the archive */
-		AHX->minRemoteVersion = 070100;
+		/*
+		 * We don't want to guess at whether the dump will successfully
+		 * restore; allow the attempt regardless of the version of the restore
+		 * target.
+		 */
+		AHX->minRemoteVersion = 0;
 		AHX->maxRemoteVersion = 999999;
 
 		ConnectDatabase(AHX, ropt->dbname,
@@ -1183,29 +1187,33 @@ archputs(const char *s, Archive *AH)
 int
 archprintf(Archive *AH, const char *fmt,...)
 {
-	char	   *p = NULL;
-	va_list		ap;
-	int			bSize = strlen(fmt) + 256;
-	int			cnt = -1;
+	char	   *p;
+	size_t		len = 128;		/* initial assumption about buffer size */
+	size_t		cnt;
 
-	/*
-	 * This is paranoid: deal with the possibility that vsnprintf is willing
-	 * to ignore trailing null or returns > 0 even if string does not fit. It
-	 * may be the case that it returns cnt = bufsize
-	 */
-	while (cnt < 0 || cnt >= (bSize - 1))
+	for (;;)
 	{
-		if (p != NULL)
-			free(p);
-		bSize *= 2;
-		p = (char *) pg_malloc(bSize);
-		va_start(ap, fmt);
-		cnt = vsnprintf(p, bSize, fmt, ap);
-		va_end(ap);
+		va_list		args;
+
+		/* Allocate work buffer. */
+		p = (char *) pg_malloc(len);
+
+		/* Try to format the data. */
+		va_start(args, fmt);
+		cnt = pvsnprintf(p, len, fmt, args);
+		va_end(args);
+
+		if (cnt < len)
+			break;				/* success */
+
+		/* Release buffer and loop around to try again with larger len. */
+		free(p);
+		len = cnt;
 	}
+
 	WriteData(AH, p, cnt);
 	free(p);
-	return cnt;
+	return (int) cnt;
 }
 
 
@@ -1312,29 +1320,33 @@ RestoreOutput(ArchiveHandle *AH, OutputContext savedContext)
 int
 ahprintf(ArchiveHandle *AH, const char *fmt,...)
 {
-	char	   *p = NULL;
-	va_list		ap;
-	int			bSize = strlen(fmt) + 256;		/* Usually enough */
-	int			cnt = -1;
+	char	   *p;
+	size_t		len = 128;		/* initial assumption about buffer size */
+	size_t		cnt;
 
-	/*
-	 * This is paranoid: deal with the possibility that vsnprintf is willing
-	 * to ignore trailing null or returns > 0 even if string does not fit. It
-	 * may be the case that it returns cnt = bufsize.
-	 */
-	while (cnt < 0 || cnt >= (bSize - 1))
+	for (;;)
 	{
-		if (p != NULL)
-			free(p);
-		bSize *= 2;
-		p = (char *) pg_malloc(bSize);
-		va_start(ap, fmt);
-		cnt = vsnprintf(p, bSize, fmt, ap);
-		va_end(ap);
+		va_list		args;
+
+		/* Allocate work buffer. */
+		p = (char *) pg_malloc(len);
+
+		/* Try to format the data. */
+		va_start(args, fmt);
+		cnt = pvsnprintf(p, len, fmt, args);
+		va_end(args);
+
+		if (cnt < len)
+			break;				/* success */
+
+		/* Release buffer and loop around to try again with larger len. */
+		free(p);
+		len = cnt;
 	}
+
 	ahwrite(p, 1, cnt, AH);
 	free(p);
-	return cnt;
+	return (int) cnt;
 }
 
 void
@@ -2456,12 +2468,12 @@ _tocEntryRequired(TocEntry *te, teSection curSection, RestoreOptions *ropt)
 	}
 
 	/* Check options for selective dump/restore */
-	if (ropt->schemaNames)
+	if (ropt->schemaNames.head != NULL)
 	{
 		/* If no namespace is specified, it means all. */
 		if (!te->namespace)
 			return 0;
-		if (strcmp(ropt->schemaNames, te->namespace) != 0)
+		if (!(simple_string_list_member(&ropt->schemaNames, te->namespace)))
 			return 0;
 	}
 
@@ -2479,21 +2491,21 @@ _tocEntryRequired(TocEntry *te, teSection curSection, RestoreOptions *ropt)
 		{
 			if (!ropt->selIndex)
 				return 0;
-			if (ropt->indexNames && strcmp(ropt->indexNames, te->tag) != 0)
+			if (ropt->indexNames.head != NULL && (!(simple_string_list_member(&ropt->indexNames, te->tag))))
 				return 0;
 		}
 		else if (strcmp(te->desc, "FUNCTION") == 0)
 		{
 			if (!ropt->selFunction)
 				return 0;
-			if (ropt->functionNames && strcmp(ropt->functionNames, te->tag) != 0)
+			if (ropt->functionNames.head != NULL && (!(simple_string_list_member(&ropt->functionNames, te->tag))))
 				return 0;
 		}
 		else if (strcmp(te->desc, "TRIGGER") == 0)
 		{
 			if (!ropt->selTrigger)
 				return 0;
-			if (ropt->triggerNames && strcmp(ropt->triggerNames, te->tag) != 0)
+			if (ropt->triggerNames.head != NULL && (!(simple_string_list_member(&ropt->triggerNames, te->tag))))
 				return 0;
 		}
 		else
@@ -2611,7 +2623,7 @@ _doSetSessionAuth(ArchiveHandle *AH, const char *user)
 {
 	PQExpBuffer cmd = createPQExpBuffer();
 
-	appendPQExpBuffer(cmd, "SET SESSION AUTHORIZATION ");
+	appendPQExpBufferStr(cmd, "SET SESSION AUTHORIZATION ");
 
 	/*
 	 * SQL requires a string literal here.	Might as well be correct.
@@ -2619,8 +2631,8 @@ _doSetSessionAuth(ArchiveHandle *AH, const char *user)
 	if (user && *user)
 		appendStringLiteralAHX(cmd, user, AH);
 	else
-		appendPQExpBuffer(cmd, "DEFAULT");
-	appendPQExpBuffer(cmd, ";");
+		appendPQExpBufferStr(cmd, "DEFAULT");
+	appendPQExpBufferChar(cmd, ';');
 
 	if (RestoringToDB(AH))
 	{
@@ -2790,7 +2802,7 @@ _selectOutputSchema(ArchiveHandle *AH, const char *schemaName)
 	appendPQExpBuffer(qry, "SET search_path = %s",
 					  fmtId(schemaName));
 	if (strcmp(schemaName, "pg_catalog") != 0)
-		appendPQExpBuffer(qry, ", pg_catalog");
+		appendPQExpBufferStr(qry, ", pg_catalog");
 
 	if (RestoringToDB(AH))
 	{
@@ -2845,7 +2857,7 @@ _selectTablespace(ArchiveHandle *AH, const char *tablespace)
 	if (strcmp(want, "") == 0)
 	{
 		/* We want the tablespace to be the database's default */
-		appendPQExpBuffer(qry, "SET default_tablespace = ''");
+		appendPQExpBufferStr(qry, "SET default_tablespace = ''");
 	}
 	else
 	{
@@ -2879,11 +2891,7 @@ _selectTablespace(ArchiveHandle *AH, const char *tablespace)
 /*
  * Extract an object description for a TOC entry, and append it to buf.
  *
- * This is not quite as general as it may seem, since it really only
- * handles constructing the right thing to put into ALTER ... OWNER TO.
- *
- * The whole thing is pretty grotty, but we are kind of stuck since the
- * information used is all that's available in older dump files.
+ * This is used for ALTER ... OWNER TO.
  */
 static void
 _getObjectDescription(PQExpBuffer buf, TocEntry *te, ArchiveHandle *AH)
@@ -2895,7 +2903,7 @@ _getObjectDescription(PQExpBuffer buf, TocEntry *te, ArchiveHandle *AH)
 		strcmp(type, "MATERIALIZED VIEW") == 0)
 		type = "TABLE";
 
-	/* objects named by a schema and name */
+	/* objects that don't require special decoration */
 	if (strcmp(type, "COLLATION") == 0 ||
 		strcmp(type, "CONVERSION") == 0 ||
 		strcmp(type, "DOMAIN") == 0 ||
@@ -2903,35 +2911,16 @@ _getObjectDescription(PQExpBuffer buf, TocEntry *te, ArchiveHandle *AH)
 		strcmp(type, "TYPE") == 0 ||
 		strcmp(type, "FOREIGN TABLE") == 0 ||
 		strcmp(type, "TEXT SEARCH DICTIONARY") == 0 ||
-		strcmp(type, "TEXT SEARCH CONFIGURATION") == 0)
-	{
-		appendPQExpBuffer(buf, "%s ", type);
-		if (te->namespace && te->namespace[0])	/* is null pre-7.3 */
-			appendPQExpBuffer(buf, "%s.", fmtId(te->namespace));
-
-		/*
-		 * Pre-7.3 pg_dump would sometimes (not always) put a fmtId'd name
-		 * into te->tag for an index. This check is heuristic, so make its
-		 * scope as narrow as possible.
-		 */
-		if (AH->version < K_VERS_1_7 &&
-			te->tag[0] == '"' &&
-			te->tag[strlen(te->tag) - 1] == '"' &&
-			strcmp(type, "INDEX") == 0)
-			appendPQExpBuffer(buf, "%s", te->tag);
-		else
-			appendPQExpBuffer(buf, "%s", fmtId(te->tag));
-		return;
-	}
-
-	/* objects named by just a name */
-	if (strcmp(type, "DATABASE") == 0 ||
+		strcmp(type, "TEXT SEARCH CONFIGURATION") == 0 ||
+		/* non-schema-specified objects */
+		strcmp(type, "DATABASE") == 0 ||
 		strcmp(type, "PROCEDURAL LANGUAGE") == 0 ||
 		strcmp(type, "SCHEMA") == 0 ||
 		strcmp(type, "FOREIGN DATA WRAPPER") == 0 ||
 		strcmp(type, "SERVER") == 0 ||
 		strcmp(type, "USER MAPPING") == 0)
 	{
+		/* We already know that search_path was set properly */
 		appendPQExpBuffer(buf, "%s %s", type, fmtId(te->tag));
 		return;
 	}
@@ -3134,7 +3123,7 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, RestoreOptions *ropt, bool isDat
 		{
 			PQExpBuffer temp = createPQExpBuffer();
 
-			appendPQExpBuffer(temp, "ALTER ");
+			appendPQExpBufferStr(temp, "ALTER ");
 			_getObjectDescription(temp, te, AH);
 			appendPQExpBuffer(temp, " OWNER TO %s;", fmtId(te->owner));
 			ahprintf(AH, "%s\n\n", temp->data);

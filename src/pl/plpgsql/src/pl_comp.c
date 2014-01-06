@@ -167,7 +167,7 @@ recheck:
 	if (function)
 	{
 		/* We have a compiled function, but is it still valid? */
-		if (function->fn_xmin == HeapTupleHeaderGetXmin(procTup->t_data) &&
+		if (function->fn_xmin == HeapTupleHeaderGetRawXmin(procTup->t_data) &&
 			ItemPointerEquals(&function->fn_tid, &procTup->t_self))
 			function_valid = true;
 		else
@@ -345,12 +345,13 @@ do_compile(FunctionCallInfo fcinfo,
 
 	function->fn_signature = format_procedure(fcinfo->flinfo->fn_oid);
 	function->fn_oid = fcinfo->flinfo->fn_oid;
-	function->fn_xmin = HeapTupleHeaderGetXmin(procTup->t_data);
+	function->fn_xmin = HeapTupleHeaderGetRawXmin(procTup->t_data);
 	function->fn_tid = procTup->t_self;
 	function->fn_input_collation = fcinfo->fncollation;
 	function->fn_cxt = func_cxt;
 	function->out_param_varno = -1;		/* set up for no OUT param */
 	function->resolve_option = plpgsql_variable_conflict;
+	function->print_strict_params = plpgsql_print_strict_params;
 
 	if (is_dml_trigger)
 		function->fn_is_trigger = PLPGSQL_DML_TRIGGER;
@@ -847,6 +848,7 @@ plpgsql_compile_inline(char *proc_source)
 	function->fn_cxt = func_cxt;
 	function->out_param_varno = -1;		/* set up for no OUT param */
 	function->resolve_option = plpgsql_variable_conflict;
+	function->print_strict_params = plpgsql_print_strict_params;
 
 	plpgsql_ns_init();
 	plpgsql_ns_push(func_name);

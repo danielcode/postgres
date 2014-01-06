@@ -217,6 +217,47 @@ CreateTupleDescCopyConstr(TupleDesc tupdesc)
 }
 
 /*
+ * TupleDescCopyEntry
+ *		This function copies a single attribute structure from one tuple
+ *		descriptor to another.
+ *
+ * !!! Constraints and defaults are not copied !!!
+ */
+void
+TupleDescCopyEntry(TupleDesc dst, AttrNumber dstAttno,
+				   TupleDesc src, AttrNumber srcAttno)
+{
+	/*
+	 * sanity checks
+	 */
+	AssertArg(PointerIsValid(src));
+	AssertArg(PointerIsValid(dst));
+	AssertArg(srcAttno >= 1);
+	AssertArg(srcAttno <= src->natts);
+	AssertArg(dstAttno >= 1);
+	AssertArg(dstAttno <= dst->natts);
+
+	memcpy(dst->attrs[dstAttno - 1], src->attrs[srcAttno - 1],
+		   ATTRIBUTE_FIXED_PART_SIZE);
+
+	/*
+	 * Aside from updating the attno, we'd better reset attcacheoff.
+	 *
+	 * XXX Actually, to be entirely safe we'd need to reset the attcacheoff of
+	 * all following columns in dst as well.  Current usage scenarios don't
+	 * require that though, because all following columns will get initialized
+	 * by other uses of this function or TupleDescInitEntry.  So we cheat a
+	 * bit to avoid a useless O(N^2) penalty.
+	 */
+	dst->attrs[dstAttno - 1]->attnum = dstAttno;
+	dst->attrs[dstAttno - 1]->attcacheoff = -1;
+
+	/* since we're not copying constraints or defaults, clear these */
+	dst->attrs[dstAttno - 1]->attnotnull = false;
+	dst->attrs[dstAttno - 1]->atthasdef = false;
+}
+
+/*
  * Free a TupleDesc including all substructure
  */
 void
@@ -434,6 +475,12 @@ equalTupleDescs(TupleDesc tupdesc1, TupleDesc tupdesc2)
  *		This function initializes a single attribute structure in
  *		a previously allocated tuple descriptor.
  *
+ * If attributeName is NULL, the attname field is set to an empty string
+ * (this is for cases where we don't know or need a name for the field).
+ * Also, some callers use this function to change the datatype-related fields
+ * in an existing tupdesc; they pass attributeName = NameStr(att->attname)
+ * to indicate that the attname field shouldn't be modified.
+ *
  * Note that attcollation is set to the default for the specified datatype.
  * If a nondefault collation is needed, insert it afterwards using
  * TupleDescInitEntryCollation.
@@ -467,12 +514,12 @@ TupleDescInitEntry(TupleDesc desc,
 	/*
 	 * Note: attributeName can be NULL, because the planner doesn't always
 	 * fill in valid resname values in targetlists, particularly for resjunk
-	 * attributes.
+	 * attributes. Also, do nothing if caller wants to re-use the old attname.
 	 */
-	if (attributeName != NULL)
-		namestrcpy(&(att->attname), attributeName);
-	else
+	if (attributeName == NULL)
 		MemSet(NameStr(att->attname), 0, NAMEDATALEN);
+	else if (attributeName != NameStr(att->attname))
+		namestrcpy(&(att->attname), attributeName);
 
 	att->attstattarget = -1;
 	att->attcacheoff = -1;

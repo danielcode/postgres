@@ -1488,8 +1488,7 @@ pg_SSPI_recvauth(Port *port)
 		char	   *namebuf;
 		int			retval;
 
-		namebuf = palloc(strlen(accountname) + strlen(domainname) + 2);
-		sprintf(namebuf, "%s@%s", accountname, domainname);
+		namebuf = psprintf("%s@%s", accountname, domainname);
 		retval = check_usermap(port->hba->usermap, port->user_name, namebuf, true);
 		pfree(namebuf);
 		return retval;
@@ -1772,7 +1771,8 @@ auth_peer(hbaPort *port)
 	char		ident_user[IDENT_USERNAME_MAX + 1];
 	uid_t		uid;
 	gid_t		gid;
-	struct passwd *pass;
+	const char *user_name;
+	char	   *errstr;
 
 	errno = 0;
 	if (getpeereid(port->sock, &uid, &gid) != 0)
@@ -1789,17 +1789,15 @@ auth_peer(hbaPort *port)
 		return STATUS_ERROR;
 	}
 
-	pass = getpwuid(uid);
-
-	if (pass == NULL)
+	user_name = get_user_name(&errstr);
+	if (!user_name)
 	{
-		ereport(LOG,
-				(errmsg("local user with ID %d does not exist",
-						(int) uid)));
+		ereport(LOG, (errmsg_internal("%s", errstr)));
+		pfree(errstr);
 		return STATUS_ERROR;
 	}
 
-	strlcpy(ident_user, pass->pw_name, IDENT_USERNAME_MAX + 1);
+	strlcpy(ident_user, user_name, IDENT_USERNAME_MAX + 1);
 
 	return check_usermap(port->hba->usermap, port->user_name, ident_user, false);
 }
@@ -1938,7 +1936,7 @@ CheckPAMAuth(Port *port, char *user, char *password)
 	pam_port_cludge = port;
 
 	/*
-	 * Set the application data portion of the conversation struct This is
+	 * Set the application data portion of the conversation struct.  This is
 	 * later used inside the PAM conversation to pass the password to the
 	 * authentication module.
 	 */
@@ -2209,8 +2207,7 @@ CheckLDAPAuth(Port *port)
 		attributes[0] = port->hba->ldapsearchattribute ? port->hba->ldapsearchattribute : "uid";
 		attributes[1] = NULL;
 
-		filter = palloc(strlen(attributes[0]) + strlen(port->user_name) + 4);
-		sprintf(filter, "(%s=%s)",
+		filter = psprintf("(%s=%s)",
 				attributes[0],
 				port->user_name);
 
@@ -2299,17 +2296,10 @@ CheckLDAPAuth(Port *port)
 		}
 	}
 	else
-	{
-		fulluser = palloc((port->hba->ldapprefix ? strlen(port->hba->ldapprefix) : 0) +
-						  strlen(port->user_name) +
-				(port->hba->ldapsuffix ? strlen(port->hba->ldapsuffix) : 0) +
-						  1);
-
-		sprintf(fulluser, "%s%s%s",
+		fulluser = psprintf("%s%s%s",
 				port->hba->ldapprefix ? port->hba->ldapprefix : "",
 				port->user_name,
 				port->hba->ldapsuffix ? port->hba->ldapsuffix : "");
-	}
 
 	r = ldap_simple_bind_s(ldap, fulluser, passwd);
 	ldap_unbind(ldap);

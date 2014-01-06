@@ -24,6 +24,7 @@
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "commands/tablespace.h"
+#include "commands/view.h"
 #include "nodes/makefuncs.h"
 #include "utils/array.h"
 #include "utils/attoptcache.h"
@@ -59,6 +60,14 @@ static relopt_bool boolRelOpts[] =
 			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST
 		},
 		true
+	},
+	{
+		{
+			"user_catalog_table",
+			"Declare a table as an additional catalog table, e.g. for the purpose of logical replication",
+			RELOPT_KIND_HEAP
+		},
+		false
 	},
 	{
 		{
@@ -173,7 +182,7 @@ static relopt_int intRelOpts[] =
 	{
 		{
 			"autovacuum_freeze_table_age",
-			"Age at which VACUUM should perform a full table sweep to replace old Xid values with FrozenXID",
+			"Age at which VACUUM should perform a full table sweep to freeze row versions",
 			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST
 		}, -1, 0, 2000000000
 	},
@@ -247,6 +256,17 @@ static relopt_string stringRelOpts[] =
 		false,
 		gistValidateBufferingOption,
 		"auto"
+	},
+	{
+		{
+			"check_option",
+			"View has WITH CHECK OPTION defined (local or cascaded).",
+			RELOPT_KIND_VIEW
+		},
+		0,
+		true,
+		validateWithCheckOption,
+		NULL
 	},
 	/* list terminator */
 	{{NULL}}
@@ -1152,6 +1172,10 @@ default_reloptions(Datum reloptions, bool validate, relopt_kind kind)
 		offsetof(StdRdOptions, autovacuum) +offsetof(AutoVacOpts, analyze_scale_factor)},
 		{"security_barrier", RELOPT_TYPE_BOOL,
 		offsetof(StdRdOptions, security_barrier)},
+		{"check_option", RELOPT_TYPE_STRING,
+		offsetof(StdRdOptions, check_option_offset)},
+		{"user_catalog_table", RELOPT_TYPE_BOOL,
+		 offsetof(StdRdOptions, user_catalog_table)}
 	};
 
 	options = parseRelOptions(reloptions, validate, kind, &numoptions);

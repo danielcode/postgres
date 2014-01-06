@@ -321,7 +321,6 @@ DefineIndex(IndexStmt *stmt,
 	IndexInfo  *indexInfo;
 	int			numberOfAttributes;
 	TransactionId limitXmin;
-	VirtualTransactionId *old_lockholders;
 	VirtualTransactionId *old_snapshots;
 	int			n_old_snapshots;
 	LockRelId	heaprelid;
@@ -372,7 +371,7 @@ DefineIndex(IndexStmt *stmt,
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("\"%s\" is not a table",
+					 errmsg("\"%s\" is not a table or materialized view",
 							RelationGetRelationName(rel))));
 	}
 
@@ -652,30 +651,18 @@ DefineIndex(IndexStmt *stmt,
 	 * for an overview of how this works)
 	 *
 	 * Now we must wait until no running transaction could have the table open
-	 * with the old list of indexes.  To do this, inquire which xacts
-	 * currently would conflict with ShareLock on the table -- ie, which ones
-	 * have a lock that permits writing the table.	Then wait for each of
-	 * these xacts to commit or abort.	Note we do not need to worry about
-	 * xacts that open the table for writing after this point; they will see
-	 * the new index when they open it.
+	 * with the old list of indexes.  Use ShareLock to consider running
+	 * transactions that hold locks that permit writing to the table.  Note we
+	 * do not need to worry about xacts that open the table for writing after
+	 * this point; they will see the new index when they open it.
 	 *
 	 * Note: the reason we use actual lock acquisition here, rather than just
 	 * checking the ProcArray and sleeping, is that deadlock is possible if
 	 * one of the transactions in question is blocked trying to acquire an
 	 * exclusive lock on our table.  The lock code will detect deadlock and
 	 * error out properly.
-	 *
-	 * Note: GetLockConflicts() never reports our own xid, hence we need not
-	 * check for that.	Also, prepared xacts are not reported, which is fine
-	 * since they certainly aren't going to do anything more.
 	 */
-	old_lockholders = GetLockConflicts(&heaplocktag, ShareLock);
-
-	while (VirtualTransactionIdIsValid(*old_lockholders))
-	{
-		VirtualXactLock(*old_lockholders, true);
-		old_lockholders++;
-	}
+	WaitForLockers(heaplocktag, ShareLock);
 
 	/*
 	 * At this moment we are sure that there are no transactions with the
@@ -739,13 +726,7 @@ DefineIndex(IndexStmt *stmt,
 	 * We once again wait until no transaction can have the table open with
 	 * the index marked as read-only for updates.
 	 */
-	old_lockholders = GetLockConflicts(&heaplocktag, ShareLock);
-
-	while (VirtualTransactionIdIsValid(*old_lockholders))
-	{
-		VirtualXactLock(*old_lockholders, true);
-		old_lockholders++;
-	}
+	WaitForLockers(heaplocktag, ShareLock);
 
 	/*
 	 * Now take the "reference snapshot" that will be used by validate_index()
@@ -1358,7 +1339,7 @@ GetDefaultOpClass(Oid type_id, Oid am_id)
 				ObjectIdGetDatum(am_id));
 
 	scan = systable_beginscan(rel, OpclassAmNameNspIndexId, true,
-							  SnapshotNow, 1, skey);
+							  NULL, 1, skey);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
@@ -1768,7 +1749,9 @@ ReindexTable(RangeVar *relation)
 	heapOid = RangeVarGetRelidExtended(relation, ShareLock, false, false,
 									   RangeVarCallbackOwnsTable, NULL);
 
-	if (!reindex_relation(heapOid, REINDEX_REL_PROCESS_TOAST))
+	if (!reindex_relation(heapOid,
+						  REINDEX_REL_PROCESS_TOAST |
+						  REINDEX_REL_CHECK_CONSTRAINTS))
 		ereport(NOTICE,
 				(errmsg("table \"%s\" has no indexes",
 						relation->relname)));
@@ -1834,14 +1817,15 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 	/*
 	 * Scan pg_class to build a list of the relations we need to reindex.
 	 *
-	 * We only consider plain relations here (toast rels will be processed
-	 * indirectly by reindex_relation).
+	 * We only consider plain relations and materialized views here (toast
+	 * rels will be processed indirectly by reindex_relation).
 	 */
 	relationRelation = heap_open(RelationRelationId, AccessShareLock);
-	scan = heap_beginscan(relationRelation, SnapshotNow, 0, NULL);
+	scan = heap_beginscan_catalog(relationRelation, 0, NULL);
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		Form_pg_class classtuple = (Form_pg_class) GETSTRUCT(tuple);
+		Oid			relid = HeapTupleGetOid(tuple);
 
 		if (classtuple->relkind != RELKIND_RELATION &&
 			classtuple->relkind != RELKIND_MATVIEW)
@@ -1853,7 +1837,7 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 			continue;
 
 		/* Check user/system classification, and optionally skip */
-		if (IsSystemClass(classtuple))
+		if (IsSystemClass(relid, classtuple))
 		{
 			if (!do_system)
 				continue;
@@ -1868,7 +1852,7 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 			continue;			/* got it already */
 
 		old = MemoryContextSwitchTo(private_context);
-		relids = lappend_oid(relids, HeapTupleGetOid(tuple));
+		relids = lappend_oid(relids, relid);
 		MemoryContextSwitchTo(old);
 	}
 	heap_endscan(scan);
@@ -1884,7 +1868,9 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 		StartTransactionCommand();
 		/* functions in indexes may want a snapshot set */
 		PushActiveSnapshot(GetTransactionSnapshot());
-		if (reindex_relation(relid, REINDEX_REL_PROCESS_TOAST))
+		if (reindex_relation(relid,
+							 REINDEX_REL_PROCESS_TOAST |
+							 REINDEX_REL_CHECK_CONSTRAINTS))
 			ereport(NOTICE,
 					(errmsg("table \"%s.%s\" was reindexed",
 							get_namespace_name(get_rel_namespace(relid)),

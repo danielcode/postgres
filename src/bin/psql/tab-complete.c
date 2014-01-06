@@ -369,47 +369,12 @@ static const SchemaQuery Query_for_list_of_constraints_with_schema = {
 	NULL
 };
 
-/* The bit masks for the following three functions come from
- * src/include/catalog/pg_trigger.h.
- */
-static const SchemaQuery Query_for_list_of_insertables = {
-	/* catname */
-	"pg_catalog.pg_class c",
-	/* selcondition */
-	"(c.relkind = 'r' OR (c.relkind = 'v' AND c.relhastriggers AND EXISTS "
-	"(SELECT 1 FROM pg_catalog.pg_trigger t WHERE t.tgrelid = c.oid AND t.tgtype & (1 << 2) <> 0)))",
-	/* viscondition */
-	"pg_catalog.pg_table_is_visible(c.oid)",
-	/* namespace */
-	"c.relnamespace",
-	/* result */
-	"pg_catalog.quote_ident(c.relname)",
-	/* qualresult */
-	NULL
-};
-
-static const SchemaQuery Query_for_list_of_deletables = {
-	/* catname */
-	"pg_catalog.pg_class c",
-	/* selcondition */
-	"(c.relkind = 'r' OR (c.relkind = 'v' AND c.relhastriggers AND EXISTS "
-	"(SELECT 1 FROM pg_catalog.pg_trigger t WHERE t.tgrelid = c.oid AND t.tgtype & (1 << 3) <> 0)))",
-	/* viscondition */
-	"pg_catalog.pg_table_is_visible(c.oid)",
-	/* namespace */
-	"c.relnamespace",
-	/* result */
-	"pg_catalog.quote_ident(c.relname)",
-	/* qualresult */
-	NULL
-};
-
+/* Relations supporting INSERT, UPDATE or DELETE */
 static const SchemaQuery Query_for_list_of_updatables = {
 	/* catname */
 	"pg_catalog.pg_class c",
 	/* selcondition */
-	"(c.relkind = 'r' OR (c.relkind = 'v' AND c.relhastriggers AND EXISTS "
-	"(SELECT 1 FROM pg_catalog.pg_trigger t WHERE t.tgrelid = c.oid AND t.tgtype & (1 << 4) <> 0)))",
+	"c.relkind IN ('r', 'f', 'v')",
 	/* viscondition */
 	"pg_catalog.pg_table_is_visible(c.oid)",
 	/* namespace */
@@ -575,6 +540,12 @@ static const SchemaQuery Query_for_list_of_matviews = {
 #define Query_for_list_of_schemas \
 "SELECT pg_catalog.quote_ident(nspname) FROM pg_catalog.pg_namespace "\
 " WHERE substring(pg_catalog.quote_ident(nspname),1,%d)='%s'"
+
+#define Query_for_list_of_alter_system_set_vars \
+"SELECT name FROM "\
+" (SELECT pg_catalog.lower(name) AS name FROM pg_catalog.pg_settings "\
+"  WHERE context != 'internal') ss "\
+" WHERE substring(name,1,%d)='%s'"
 
 #define Query_for_list_of_set_vars \
 "SELECT name FROM "\
@@ -894,7 +865,7 @@ psql_completion(char *text, int start, int end)
 		"\\a", "\\connect", "\\conninfo", "\\C", "\\cd", "\\copy", "\\copyright",
 		"\\d", "\\da", "\\db", "\\dc", "\\dC", "\\dd", "\\dD", "\\des", "\\det", "\\deu", "\\dew", "\\df",
 		"\\dF", "\\dFd", "\\dFp", "\\dFt", "\\dg", "\\di", "\\dl", "\\dL",
-		"\\dn", "\\do", "\\dp", "\\drds", "\\ds", "\\dS", "\\dt", "\\dT", "\\dv", "\\du",
+		"\\dn", "\\do", "\\dp", "\\drds", "\\ds", "\\dS", "\\dt", "\\dT", "\\dv", "\\du", "\\dx",
 		"\\e", "\\echo", "\\ef", "\\encoding",
 		"\\f", "\\g", "\\gset", "\\h", "\\help", "\\H", "\\i", "\\ir", "\\l",
 		"\\lo_import", "\\lo_export", "\\lo_list", "\\lo_unlink",
@@ -965,7 +936,7 @@ psql_completion(char *text, int start, int end)
 		{"AGGREGATE", "COLLATION", "CONVERSION", "DATABASE", "DEFAULT PRIVILEGES", "DOMAIN",
 			"EXTENSION", "FOREIGN DATA WRAPPER", "FOREIGN TABLE", "FUNCTION",
 			"GROUP", "INDEX", "LANGUAGE", "LARGE OBJECT", "MATERIALIZED VIEW", "OPERATOR",
-			"ROLE", "RULE", "SCHEMA", "SERVER", "SEQUENCE", "TABLE",
+			 "ROLE", "RULE", "SCHEMA", "SERVER", "SEQUENCE", "SYSTEM SET", "TABLE",
 			"TABLESPACE", "TEXT SEARCH", "TRIGGER", "TYPE",
 		"USER", "USER MAPPING FOR", "VIEW", NULL};
 
@@ -1298,6 +1269,11 @@ psql_completion(char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(list_ALTER_SERVER);
 	}
+	/* ALTER SYSTEM SET <name> */
+	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
+			 pg_strcasecmp(prev2_wd, "SYSTEM") == 0 &&
+			 pg_strcasecmp(prev_wd, "SET") == 0)
+		COMPLETE_WITH_QUERY(Query_for_list_of_alter_system_set_vars);
 	/* ALTER VIEW <name> */
 	else if (pg_strcasecmp(prev3_wd, "ALTER") == 0 &&
 			 pg_strcasecmp(prev2_wd, "VIEW") == 0)
@@ -1371,7 +1347,7 @@ psql_completion(char *text, int start, int end)
 		static const char *const list_ALTER2[] =
 		{"ADD", "ALTER", "CLUSTER ON", "DISABLE", "DROP", "ENABLE", "INHERIT",
 			"NO INHERIT", "RENAME", "RESET", "OWNER TO", "SET",
-		"VALIDATE CONSTRAINT", NULL};
+		 "VALIDATE CONSTRAINT", "REPLICA IDENTITY", NULL};
 
 		COMPLETE_WITH_LIST(list_ALTER2);
 	}
@@ -1615,6 +1591,35 @@ psql_completion(char *text, int start, int end)
 		};
 
 		COMPLETE_WITH_LIST(list_TABLEOPTIONS);
+	}
+	else if (pg_strcasecmp(prev4_wd, "REPLICA") == 0 &&
+			 pg_strcasecmp(prev3_wd, "IDENTITY") == 0 &&
+			 pg_strcasecmp(prev2_wd, "USING") == 0 &&
+			 pg_strcasecmp(prev_wd, "INDEX") == 0)
+	{
+		completion_info_charp = prev5_wd;
+		COMPLETE_WITH_QUERY(Query_for_index_of_table);
+	}
+	else if (pg_strcasecmp(prev5_wd, "TABLE") == 0 &&
+			 pg_strcasecmp(prev3_wd, "REPLICA") == 0 &&
+			 pg_strcasecmp(prev2_wd, "IDENTITY") == 0 &&
+			 pg_strcasecmp(prev_wd, "USING") == 0)
+	{
+		COMPLETE_WITH_CONST("INDEX");
+	}
+	else if (pg_strcasecmp(prev4_wd, "TABLE") == 0 &&
+			 pg_strcasecmp(prev2_wd, "REPLICA") == 0 &&
+			 pg_strcasecmp(prev_wd, "IDENTITY") == 0)
+	{
+		static const char *const list_REPLICAID[] =
+		{"FULL", "NOTHING", "DEFAULT", "USING", NULL};
+
+		COMPLETE_WITH_LIST(list_REPLICAID);
+	}
+	else if (pg_strcasecmp(prev3_wd, "TABLE") == 0 &&
+			 pg_strcasecmp(prev_wd, "REPLICA") == 0)
+	{
+		COMPLETE_WITH_CONST("IDENTITY");
 	}
 
 	/* ALTER TABLESPACE <foo> with RENAME TO, OWNER TO, SET, RESET */
@@ -2362,7 +2367,7 @@ psql_completion(char *text, int start, int end)
 	/* Complete DELETE FROM with a list of tables */
 	else if (pg_strcasecmp(prev2_wd, "DELETE") == 0 &&
 			 pg_strcasecmp(prev_wd, "FROM") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_deletables, NULL);
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_updatables, NULL);
 	/* Complete DELETE FROM <table> */
 	else if (pg_strcasecmp(prev3_wd, "DELETE") == 0 &&
 			 pg_strcasecmp(prev2_wd, "FROM") == 0)
@@ -2378,7 +2383,7 @@ psql_completion(char *text, int start, int end)
 	else if (pg_strcasecmp(prev_wd, "DISCARD") == 0)
 	{
 		static const char *const list_DISCARD[] =
-		{"ALL", "PLANS", "TEMP", NULL};
+		{"ALL", "PLANS", "SEQUENCES", "TEMP", NULL};
 
 		COMPLETE_WITH_LIST(list_DISCARD);
 	}
@@ -2732,7 +2737,7 @@ psql_completion(char *text, int start, int end)
 	/* Complete INSERT INTO with table names */
 	else if (pg_strcasecmp(prev2_wd, "INSERT") == 0 &&
 			 pg_strcasecmp(prev_wd, "INTO") == 0)
-		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_insertables, NULL);
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_updatables, NULL);
 	/* Complete "INSERT INTO <table> (" with attribute names */
 	else if (pg_strcasecmp(prev4_wd, "INSERT") == 0 &&
 			 pg_strcasecmp(prev3_wd, "INTO") == 0 &&
@@ -2871,11 +2876,22 @@ psql_completion(char *text, int start, int end)
 	else if (pg_strcasecmp(prev3_wd, "REFRESH") == 0 &&
 			 pg_strcasecmp(prev2_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev_wd, "VIEW") == 0)
+		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews,
+								   " UNION SELECT 'CONCURRENTLY'");
+	else if (pg_strcasecmp(prev4_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev2_wd, "VIEW") == 0 &&
+			 pg_strcasecmp(prev_wd, "CONCURRENTLY") == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
 	else if (pg_strcasecmp(prev4_wd, "REFRESH") == 0 &&
 			 pg_strcasecmp(prev3_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev2_wd, "VIEW") == 0)
 		COMPLETE_WITH_CONST("WITH");
+	else if (pg_strcasecmp(prev5_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev4_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev3_wd, "VIEW") == 0 &&
+			 pg_strcasecmp(prev2_wd, "CONCURRENTLY") == 0)
+		COMPLETE_WITH_CONST("WITH DATA");
 	else if (pg_strcasecmp(prev5_wd, "REFRESH") == 0 &&
 			 pg_strcasecmp(prev4_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev3_wd, "VIEW") == 0 &&
@@ -2886,6 +2902,12 @@ psql_completion(char *text, int start, int end)
 
 		COMPLETE_WITH_LIST(list_WITH_DATA);
 	}
+	else if (pg_strcasecmp(prev6_wd, "REFRESH") == 0 &&
+			 pg_strcasecmp(prev5_wd, "MATERIALIZED") == 0 &&
+			 pg_strcasecmp(prev4_wd, "VIEW") == 0 &&
+			 pg_strcasecmp(prev3_wd, "CONCURRENTLY") == 0 &&
+			 pg_strcasecmp(prev_wd, "WITH") == 0)
+		COMPLETE_WITH_CONST("DATA");
 	else if (pg_strcasecmp(prev6_wd, "REFRESH") == 0 &&
 			 pg_strcasecmp(prev5_wd, "MATERIALIZED") == 0 &&
 			 pg_strcasecmp(prev4_wd, "VIEW") == 0 &&
@@ -3303,6 +3325,8 @@ psql_completion(char *text, int start, int end)
 		COMPLETE_WITH_QUERY(Query_for_list_of_roles);
 	else if (strncmp(prev_wd, "\\dv", strlen("\\dv")) == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_views, NULL);
+	else if (strncmp(prev_wd, "\\dx", strlen("\\dx")) == 0)
+		COMPLETE_WITH_QUERY(Query_for_list_of_extensions);
 	else if (strncmp(prev_wd, "\\dm", strlen("\\dm")) == 0)
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_matviews, NULL);
 
@@ -3322,9 +3346,10 @@ psql_completion(char *text, int start, int end)
 	else if (strcmp(prev_wd, "\\pset") == 0)
 	{
 		static const char *const my_list[] =
-		{"format", "border", "expanded",
-			"null", "fieldsep", "tuples_only", "title", "tableattr",
-		"linestyle", "pager", "recordsep", NULL};
+		{"border", "columns", "expanded", "fieldsep", "fieldsep_zero",
+		 "footer", "format", "linestyle", "null", "numericlocale",
+		 "pager", "recordsep", "recordsep_zero", "tableattr", "title",
+		 "tuples_only", NULL};
 
 		COMPLETE_WITH_LIST_CS(my_list);
 	}
@@ -3359,7 +3384,8 @@ psql_completion(char *text, int start, int end)
 			 strcmp(prev_wd, "\\ir") == 0 || strcmp(prev_wd, "\\include_relative") == 0 ||
 			 strcmp(prev_wd, "\\o") == 0 || strcmp(prev_wd, "\\out") == 0 ||
 			 strcmp(prev_wd, "\\s") == 0 ||
-			 strcmp(prev_wd, "\\w") == 0 || strcmp(prev_wd, "\\write") == 0
+			 strcmp(prev_wd, "\\w") == 0 || strcmp(prev_wd, "\\write") == 0 ||
+			 strcmp(prev_wd, "\\lo_import") == 0
 		)
 	{
 		completion_charp = "\\";
@@ -3599,8 +3625,8 @@ _complete_from_query(int is_schema_query, const char *text, int state)
 					   "pg_catalog.pg_class c") == 0 &&
 				strncmp(text, "pg_", 3) !=0)
 			{
-				appendPQExpBuffer(&query_buffer,
-								  " AND c.relnamespace <> (SELECT oid FROM"
+				appendPQExpBufferStr(&query_buffer,
+									 " AND c.relnamespace <> (SELECT oid FROM"
 				   " pg_catalog.pg_namespace WHERE nspname = 'pg_catalog')");
 			}
 
@@ -3802,7 +3828,6 @@ static char **
 complete_from_variables(char *text, const char *prefix, const char *suffix)
 {
 	char	  **matches;
-	int			overhead = strlen(prefix) + strlen(suffix) + 1;
 	char	  **varnames;
 	int			nvars = 0;
 	int			maxvars = 100;
@@ -3813,8 +3838,6 @@ complete_from_variables(char *text, const char *prefix, const char *suffix)
 
 	for (ptr = pset.vars->next; ptr; ptr = ptr->next)
 	{
-		char	   *buffer;
-
 		if (nvars >= maxvars)
 		{
 			maxvars *= 2;
@@ -3827,9 +3850,7 @@ complete_from_variables(char *text, const char *prefix, const char *suffix)
 			}
 		}
 
-		buffer = (char *) pg_malloc(strlen(ptr->name) + overhead);
-		sprintf(buffer, "%s%s%s", prefix, ptr->name, suffix);
-		varnames[nvars++] = buffer;
+		varnames[nvars++] = psprintf("%s%s%s", prefix, ptr->name, suffix);
 	}
 
 	varnames[nvars] = NULL;

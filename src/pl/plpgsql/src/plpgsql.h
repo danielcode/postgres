@@ -124,11 +124,17 @@ enum
 {
 	PLPGSQL_GETDIAG_ROW_COUNT,
 	PLPGSQL_GETDIAG_RESULT_OID,
+	PLPGSQL_GETDIAG_CONTEXT,
 	PLPGSQL_GETDIAG_ERROR_CONTEXT,
 	PLPGSQL_GETDIAG_ERROR_DETAIL,
 	PLPGSQL_GETDIAG_ERROR_HINT,
 	PLPGSQL_GETDIAG_RETURNED_SQLSTATE,
-	PLPGSQL_GETDIAG_MESSAGE_TEXT
+	PLPGSQL_GETDIAG_COLUMN_NAME,
+	PLPGSQL_GETDIAG_CONSTRAINT_NAME,
+	PLPGSQL_GETDIAG_DATATYPE_NAME,
+	PLPGSQL_GETDIAG_MESSAGE_TEXT,
+	PLPGSQL_GETDIAG_TABLE_NAME,
+	PLPGSQL_GETDIAG_SCHEMA_NAME
 };
 
 /* --------
@@ -140,7 +146,12 @@ enum
 	PLPGSQL_RAISEOPTION_ERRCODE,
 	PLPGSQL_RAISEOPTION_MESSAGE,
 	PLPGSQL_RAISEOPTION_DETAIL,
-	PLPGSQL_RAISEOPTION_HINT
+	PLPGSQL_RAISEOPTION_HINT,
+	PLPGSQL_RAISEOPTION_COLUMN,
+	PLPGSQL_RAISEOPTION_CONSTRAINT,
+	PLPGSQL_RAISEOPTION_DATATYPE,
+	PLPGSQL_RAISEOPTION_TABLE,
+	PLPGSQL_RAISEOPTION_SCHEMA
 };
 
 /* --------
@@ -726,6 +737,8 @@ typedef struct PLpgSQL_function
 
 	PLpgSQL_resolve_option resolve_option;
 
+	bool		print_strict_params;
+
 	int			ndatums;
 	PLpgSQL_datum **datums;
 	PLpgSQL_stmt_block *action;
@@ -760,9 +773,13 @@ typedef struct PLpgSQL_execstate
 	ResourceOwner tuple_store_owner;
 	ReturnSetInfo *rsi;
 
+	/* the datums representing the function's local variables */
 	int			found_varno;
 	int			ndatums;
 	PLpgSQL_datum **datums;
+
+	/* EState to use for "simple" expression evaluation */
+	EState	   *simple_eval_estate;
 
 	/* temporary state for results from evaluation of query or expr */
 	SPITupleTable *eval_tuptable;
@@ -862,6 +879,8 @@ extern IdentifierLookup plpgsql_IdentifierLookup;
 
 extern int	plpgsql_variable_conflict;
 
+extern bool plpgsql_print_strict_params;
+
 extern bool plpgsql_check_syntax;
 extern bool plpgsql_DumpExecTree;
 
@@ -928,7 +947,8 @@ extern Datum plpgsql_validator(PG_FUNCTION_ARGS);
  * ----------
  */
 extern Datum plpgsql_exec_function(PLpgSQL_function *func,
-					  FunctionCallInfo fcinfo);
+					  FunctionCallInfo fcinfo,
+					  EState *simple_eval_estate);
 extern HeapTuple plpgsql_exec_trigger(PLpgSQL_function *func,
 					 TriggerData *trigdata);
 extern void plpgsql_exec_event_trigger(PLpgSQL_function *func,

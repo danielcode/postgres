@@ -128,6 +128,8 @@ typedef struct Query
 
 	List	   *targetList;		/* target list (of TargetEntry) */
 
+	List	   *withCheckOptions; /* a list of WithCheckOption's */
+
 	List	   *returningList;	/* return-values list (of TargetEntry) */
 
 	List	   *groupClause;	/* a list of SortGroupClause's */
@@ -279,12 +281,16 @@ typedef struct CollateClause
 /*
  * FuncCall - a function or aggregate invocation
  *
- * agg_order (if not NIL) indicates we saw 'foo(... ORDER BY ...)'.
+ * agg_order (if not NIL) indicates we saw 'foo(... ORDER BY ...)', or if
+ * agg_within_group is true, it was 'foo(...) WITHIN GROUP (ORDER BY ...)'.
  * agg_star indicates we saw a 'foo(*)' construct, while agg_distinct
  * indicates we saw 'foo(DISTINCT ...)'.  In any of these cases, the
  * construct *must* be an aggregate call.  Otherwise, it might be either an
- * aggregate or some other kind of function.  However, if OVER is present
- * it had better be an aggregate or window function.
+ * aggregate or some other kind of function.  However, if FILTER or OVER is
+ * present it had better be an aggregate or window function.
+ *
+ * Normally, you'd initialize this via makeFuncCall() and then only change the
+ * parts of the struct its defaults don't match afterwards, as needed.
  */
 typedef struct FuncCall
 {
@@ -292,6 +298,8 @@ typedef struct FuncCall
 	List	   *funcname;		/* qualified name of function */
 	List	   *args;			/* the arguments (list of exprs) */
 	List	   *agg_order;		/* ORDER BY (list of SortBy) */
+	Node	   *agg_filter;		/* FILTER clause, if any */
+	bool		agg_within_group;		/* ORDER BY appeared in WITHIN GROUP */
 	bool		agg_star;		/* argument was really '*' */
 	bool		agg_distinct;	/* arguments were labeled DISTINCT */
 	bool		func_variadic;	/* last argument was labeled VARIADIC */
@@ -458,12 +466,25 @@ typedef struct RangeSubselect
 
 /*
  * RangeFunction - function call appearing in a FROM clause
+ *
+ * functions is a List because we use this to represent the construct
+ * ROWS FROM(func1(...), func2(...), ...).	Each element of this list is a
+ * two-element sublist, the first element being the untransformed function
+ * call tree, and the second element being a possibly-empty list of ColumnDef
+ * nodes representing any columndef list attached to that function within the
+ * ROWS FROM() syntax.
+ *
+ * alias and coldeflist represent any alias and/or columndef list attached
+ * at the top level.  (We disallow coldeflist appearing both here and
+ * per-function, but that's checked in parse analysis, not by the grammar.)
  */
 typedef struct RangeFunction
 {
 	NodeTag		type;
 	bool		lateral;		/* does it have LATERAL prefix? */
-	Node	   *funccallnode;	/* untransformed function call tree */
+	bool		ordinality;		/* does it have WITH ORDINALITY suffix? */
+	bool		is_rowsfrom;	/* is result of ROWS FROM() syntax? */
+	List	   *functions;		/* per-function information, see above */
 	Alias	   *alias;			/* table alias & optional column aliases */
 	List	   *coldeflist;		/* list of ColumnDef nodes to describe result
 								 * of function returning RECORD */
@@ -503,6 +524,7 @@ typedef struct ColumnDef
 	Oid			collOid;		/* collation OID (InvalidOid if not set) */
 	List	   *constraints;	/* other constraints on column */
 	List	   *fdwoptions;		/* per-column FDW options */
+	int			location;		/* parse location, or -1 if none/unknown */
 } ColumnDef;
 
 /*
@@ -643,7 +665,7 @@ typedef struct XmlSerialize
  *	  dropped columns.	Note however that a stored rule may have nonempty
  *	  colnames for columns dropped since the rule was created (and for that
  *	  matter the colnames might be out of date due to column renamings).
- *	  The same comments apply to FUNCTION RTEs when the function's return type
+ *	  The same comments apply to FUNCTION RTEs when a function's return type
  *	  is a named composite type.
  *
  *	  In JOIN RTEs, the colnames in both alias and eref are one-to-one with
@@ -652,7 +674,7 @@ typedef struct XmlSerialize
  *	  a stored rule might contain entries for columns dropped since the rule
  *	  was created.	(This is only possible for columns not actually referenced
  *	  in the rule.)  When loading a stored rule, we replace the joinaliasvars
- *	  items for any such columns with NULL Consts.	(We can't simply delete
+ *	  items for any such columns with null pointers.  (We can't simply delete
  *	  them from the joinaliasvars list, because that would affect the attnums
  *	  of Vars referencing the rest of the list.)
  *
@@ -723,29 +745,33 @@ typedef struct RangeTblEntry
 	/*
 	 * Fields valid for a join RTE (else NULL/zero):
 	 *
-	 * joinaliasvars is a list of Vars or COALESCE expressions corresponding
-	 * to the columns of the join result.  An alias Var referencing column K
-	 * of the join result can be replaced by the K'th element of joinaliasvars
-	 * --- but to simplify the task of reverse-listing aliases correctly, we
-	 * do not do that until planning time.	In a Query loaded from a stored
-	 * rule, it is also possible for joinaliasvars items to be NULL Consts,
-	 * denoting columns dropped since the rule was made.
+	 * joinaliasvars is a list of (usually) Vars corresponding to the columns
+	 * of the join result.	An alias Var referencing column K of the join
+	 * result can be replaced by the K'th element of joinaliasvars --- but to
+	 * simplify the task of reverse-listing aliases correctly, we do not do
+	 * that until planning time.  In detail: an element of joinaliasvars can
+	 * be a Var of one of the join's input relations, or such a Var with an
+	 * implicit coercion to the join's output column type, or a COALESCE
+	 * expression containing the two input column Vars (possibly coerced).
+	 * Within a Query loaded from a stored rule, it is also possible for
+	 * joinaliasvars items to be null pointers, which are placeholders for
+	 * (necessarily unreferenced) columns dropped since the rule was made.
+	 * Also, once planning begins, joinaliasvars items can be almost anything,
+	 * as a result of subquery-flattening substitutions.
 	 */
 	JoinType	jointype;		/* type of join */
 	List	   *joinaliasvars;	/* list of alias-var expansions */
 
 	/*
-	 * Fields valid for a function RTE (else NULL):
+	 * Fields valid for a function RTE (else NIL/zero):
 	 *
-	 * If the function returns RECORD, funccoltypes lists the column types
-	 * declared in the RTE's column type specification, funccoltypmods lists
-	 * their declared typmods, funccolcollations their collations.	Otherwise,
-	 * those fields are NIL.
+	 * When funcordinality is true, the eref->colnames list includes an alias
+	 * for the ordinality column.  The ordinality column is otherwise
+	 * implicit, and must be accounted for "by hand" in places such as
+	 * expandRTE().
 	 */
-	Node	   *funcexpr;		/* expression tree for func call */
-	List	   *funccoltypes;	/* OID list of column type OIDs */
-	List	   *funccoltypmods; /* integer list of column typmods */
-	List	   *funccolcollations;		/* OID list of column collation OIDs */
+	List	   *functions;		/* list of RangeTblFunction nodes */
+	bool		funcordinality; /* is this called WITH ORDINALITY? */
 
 	/*
 	 * Fields valid for a values RTE (else NIL):
@@ -776,6 +802,50 @@ typedef struct RangeTblEntry
 	Bitmapset  *selectedCols;	/* columns needing SELECT permission */
 	Bitmapset  *modifiedCols;	/* columns needing INSERT/UPDATE permission */
 } RangeTblEntry;
+
+/*
+ * RangeTblFunction -
+ *	  RangeTblEntry subsidiary data for one function in a FUNCTION RTE.
+ *
+ * If the function had a column definition list (required for an
+ * otherwise-unspecified RECORD result), funccolnames lists the names given
+ * in the definition list, funccoltypes lists their declared column types,
+ * funccoltypmods lists their typmods, funccolcollations their collations.
+ * Otherwise, those fields are NIL.
+ *
+ * Notice we don't attempt to store info about the results of functions
+ * returning named composite types, because those can change from time to
+ * time.  We do however remember how many columns we thought the type had
+ * (including dropped columns!), so that we can successfully ignore any
+ * columns added after the query was parsed.
+ */
+typedef struct RangeTblFunction
+{
+	NodeTag		type;
+
+	Node	   *funcexpr;		/* expression tree for func call */
+	int			funccolcount;	/* number of columns it contributes to RTE */
+	/* These fields record the contents of a column definition list, if any: */
+	List	   *funccolnames;	/* column names (list of String) */
+	List	   *funccoltypes;	/* OID list of column type OIDs */
+	List	   *funccoltypmods; /* integer list of column typmods */
+	List	   *funccolcollations;		/* OID list of column collation OIDs */
+	/* This is set during planning for use by the executor: */
+	Bitmapset  *funcparams;		/* PARAM_EXEC Param IDs affecting this func */
+} RangeTblFunction;
+
+/*
+ * WithCheckOption -
+ *		representation of WITH CHECK OPTION checks to be applied to new tuples
+ *		when inserting/updating an auto-updatable view.
+ */
+typedef struct WithCheckOption
+{
+	NodeTag		type;
+	char	   *viewname;	/* name of view that specified the WCO */
+	Node	   *qual;		/* constraint qual to check */
+	bool		cascaded;	/* true = WITH CASCADED CHECK OPTION */
+} WithCheckOption;
 
 /*
  * SortGroupClause -
@@ -1245,8 +1315,16 @@ typedef enum AlterTableType
 	AT_DropInherit,				/* NO INHERIT parent */
 	AT_AddOf,					/* OF <type_name> */
 	AT_DropOf,					/* NOT OF */
+	AT_ReplicaIdentity,			/* REPLICA IDENTITY */
 	AT_GenericOptions			/* OPTIONS (...) */
 } AlterTableType;
+
+typedef struct ReplicaIdentityStmt
+{
+	NodeTag		type;
+	char		identity_type;
+	char	   *name;
+} ReplicaIdentityStmt;
 
 typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 {
@@ -2327,6 +2405,13 @@ typedef struct AlterEnumStmt
  *		Create View Statement
  * ----------------------
  */
+typedef enum ViewCheckOption
+{
+	NO_CHECK_OPTION,
+	LOCAL_CHECK_OPTION,
+	CASCADED_CHECK_OPTION
+} ViewCheckOption;
+
 typedef struct ViewStmt
 {
 	NodeTag		type;
@@ -2335,6 +2420,7 @@ typedef struct ViewStmt
 	Node	   *query;			/* the SELECT query */
 	bool		replace;		/* replace an existing view? */
 	List	   *options;		/* options from WITH clause */
+	ViewCheckOption	withCheckOption; /* WITH CHECK OPTION */
 } ViewStmt;
 
 /* ----------------------
@@ -2386,6 +2472,16 @@ typedef struct DropdbStmt
 	char	   *dbname;			/* database to drop */
 	bool		missing_ok;		/* skip error if db is missing? */
 } DropdbStmt;
+
+/* ----------------------
+ *		Alter System Statement
+ * ----------------------
+ */
+typedef struct AlterSystemStmt
+{
+	NodeTag		type;
+	VariableSetStmt *setstmt;	/* SET subcommand */
+}	AlterSystemStmt;
 
 /* ----------------------
  *		Cluster Statement (support pbrown's cluster index implementation)
@@ -2473,6 +2569,7 @@ typedef struct CreateTableAsStmt
 typedef struct RefreshMatViewStmt
 {
 	NodeTag		type;
+	bool		concurrent;		/* allow concurrent access? */
 	bool		skipData;		/* true for WITH NO DATA */
 	RangeVar   *relation;		/* relation to insert into */
 } RefreshMatViewStmt;
@@ -2495,6 +2592,7 @@ typedef enum DiscardMode
 {
 	DISCARD_ALL,
 	DISCARD_PLANS,
+	DISCARD_SEQUENCES,
 	DISCARD_TEMP
 } DiscardMode;
 

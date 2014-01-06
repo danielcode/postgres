@@ -1222,6 +1222,7 @@ ValidatePgVersion(const char *path)
  * GUC variables: lists of library names to be preloaded at postmaster
  * start and at backend start
  */
+char	   *session_preload_libraries_string = NULL;
 char	   *shared_preload_libraries_string = NULL;
 char	   *local_preload_libraries_string = NULL;
 
@@ -1239,7 +1240,6 @@ load_libraries(const char *libraries, const char *gucname, bool restricted)
 {
 	char	   *rawstring;
 	List	   *elemlist;
-	int			elevel;
 	ListCell   *l;
 
 	if (libraries == NULL || libraries[0] == '\0')
@@ -1261,18 +1261,6 @@ load_libraries(const char *libraries, const char *gucname, bool restricted)
 		return;
 	}
 
-	/*
-	 * Choose notice level: avoid repeat messages when re-loading a library
-	 * that was preloaded into the postmaster.	(Only possible in EXEC_BACKEND
-	 * configurations)
-	 */
-#ifdef EXEC_BACKEND
-	if (IsUnderPostmaster && process_shared_preload_libraries_in_progress)
-		elevel = DEBUG2;
-	else
-#endif
-		elevel = LOG;
-
 	foreach(l, elemlist)
 	{
 		char	   *tok = (char *) lfirst(l);
@@ -1285,14 +1273,12 @@ load_libraries(const char *libraries, const char *gucname, bool restricted)
 		{
 			char	   *expanded;
 
-			expanded = palloc(strlen("$libdir/plugins/") + strlen(filename) + 1);
-			strcpy(expanded, "$libdir/plugins/");
-			strcat(expanded, filename);
+			expanded = psprintf("$libdir/plugins/%s", filename);
 			pfree(filename);
 			filename = expanded;
 		}
 		load_file(filename, restricted);
-		ereport(elevel,
+		ereport(DEBUG1,
 				(errmsg("loaded library \"%s\"", filename)));
 		pfree(filename);
 	}
@@ -1318,8 +1304,11 @@ process_shared_preload_libraries(void)
  * process any libraries that should be preloaded at backend start
  */
 void
-process_local_preload_libraries(void)
+process_session_preload_libraries(void)
 {
+	load_libraries(session_preload_libraries_string,
+				   "session_preload_libraries",
+				   false);
 	load_libraries(local_preload_libraries_string,
 				   "local_preload_libraries",
 				   true);

@@ -19,7 +19,7 @@ m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
 AC_INIT([PostgreSQL], [9.4devel], [pgsql-bugs@postgresql.org])
 
-m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.63], [], [m4_fatal([Autoconf version 2.63 is required.
+m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
 Untested combinations of 'autoconf' and PostgreSQL versions are not
 recommended.  You can remove the check from 'configure.in' but it is then
 your responsibility whether the result works or not.])])
@@ -29,10 +29,14 @@ AC_CONFIG_AUX_DIR(config)
 AC_PREFIX_DEFAULT(/usr/local/pgsql)
 AC_SUBST(configure_args, [$ac_configure_args])
 
-AC_DEFINE_UNQUOTED(PG_VERSION, "$PACKAGE_VERSION", [PostgreSQL version as a string])
 [PG_MAJORVERSION=`expr "$PACKAGE_VERSION" : '\([0-9][0-9]*\.[0-9][0-9]*\)'`]
 AC_SUBST(PG_MAJORVERSION)
 AC_DEFINE_UNQUOTED(PG_MAJORVERSION, "$PG_MAJORVERSION", [PostgreSQL major version as a string])
+
+PGAC_ARG_REQ(with, extra-version, [STRING], [append STRING to version],
+             [PG_VERSION="$PACKAGE_VERSION$withval"],
+             [PG_VERSION="$PACKAGE_VERSION"])
+AC_DEFINE_UNQUOTED(PG_VERSION, "$PG_VERSION", [PostgreSQL version as a string])
 
 AC_CANONICAL_HOST
 
@@ -60,7 +64,6 @@ case $host_os in
 dragonfly*) template=netbsd ;;
  freebsd*) template=freebsd ;;
     hpux*) template=hpux ;;
-    irix*) template=irix ;;
  linux*|gnu*|k*bsd*-gnu)
            template=linux ;;
    mingw*) template=win32 ;;
@@ -350,7 +353,6 @@ PGAC_ARG_REQ(with, CC, [CMD], [set compiler (deprecated)], [CC=$with_CC])
 
 case $template in
   aix) pgac_cc_list="gcc xlc";;
- irix) pgac_cc_list="cc";; # no gcc
     *) pgac_cc_list="gcc cc";;
 esac
 
@@ -884,6 +886,8 @@ case $host_os in
 esac
 AC_SEARCH_LIBS(getopt_long, [getopt gnugetopt])
 AC_SEARCH_LIBS(crypt, crypt)
+AC_SEARCH_LIBS(shm_open, rt)
+AC_SEARCH_LIBS(shm_unlink, rt)
 # Solaris:
 AC_SEARCH_LIBS(fdatasync, [rt posix4])
 # Required for thread_test.c on Solaris 2.5:
@@ -920,7 +924,7 @@ fi
 if test "$with_gssapi" = yes ; then
   if test "$PORTNAME" != "win32"; then
     AC_SEARCH_LIBS(gss_init_sec_context, [gssapi_krb5 gss 'gssapi -lkrb5 -lcrypto'], [],
-		 		  [AC_MSG_ERROR([could not find function 'gss_init_sec_context' required for GSSAPI])])
+                   [AC_MSG_ERROR([could not find function 'gss_init_sec_context' required for GSSAPI])])
   else
     LIBS="$LIBS -lgssapi32"
   fi
@@ -983,9 +987,9 @@ AC_SUBST(OSSP_UUID_LIBS)
 ##
 
 dnl sys/socket.h is required by AC_FUNC_ACCEPT_ARGTYPES
-AC_CHECK_HEADERS([crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h poll.h pwd.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/ucred.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h])
+AC_CHECK_HEADERS([crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h poll.h pwd.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h])
 
-# On BSD, cpp test for net/if.h will fail unless sys/socket.h
+# On BSD, test for net/if.h will fail unless sys/socket.h
 # is included first.
 AC_CHECK_HEADERS(net/if.h, [], [],
 [AC_INCLUDES_DEFAULT
@@ -994,7 +998,14 @@ AC_CHECK_HEADERS(net/if.h, [], [],
 #endif
 ])
 
-# At least on IRIX, cpp test for netinet/tcp.h will fail unless
+# On OpenBSD, test for sys/ucred.h will fail unless sys/param.h
+# is included first.
+AC_CHECK_HEADERS(sys/ucred.h, [], [],
+[AC_INCLUDES_DEFAULT
+#include <sys/param.h>
+])
+
+# At least on IRIX, test for netinet/tcp.h will fail unless
 # netinet/in.h is included first.
 AC_CHECK_HEADERS(netinet/in.h)
 AC_CHECK_HEADERS(netinet/tcp.h, [], [],
@@ -1108,12 +1119,9 @@ fi
 
 m4_defun([AC_PROG_CC_STDC], []) dnl We don't want that.
 AC_C_BIGENDIAN
-AC_C_CONST
 PGAC_C_INLINE
-AC_C_STRINGIZE
 AC_C_FLEXIBLE_ARRAY_MEMBER
 PGAC_C_SIGNED
-AC_C_VOLATILE
 PGAC_C_FUNCNAME_SUPPORT
 PGAC_C_STATIC_ASSERT
 PGAC_C_TYPES_COMPATIBLE
@@ -1134,6 +1142,7 @@ PGAC_TYPE_LOCALE_T
 
 AC_CHECK_TYPES([struct cmsgcred], [], [],
 [#include <sys/socket.h>
+#include <sys/param.h>
 #ifdef HAVE_SYS_UCRED_H
 #include <sys/ucred.h>
 #endif])
@@ -1197,6 +1206,11 @@ esac
 # defines can affect what is generated for that.
 if test "$PORTNAME" != "win32"; then
    AC_SYS_LARGEFILE
+   # Autoconf 2.69's AC_SYS_LARGEFILE believes it's a good idea to #define
+   # _DARWIN_USE_64_BIT_INODE, but it isn't: on OS X 10.5 that activates a
+   # bug that causes readdir() to sometimes return EINVAL.  On later OS X
+   # versions where the feature actually works, it's on by default anyway.
+   AH_VERBATIM([_DARWIN_USE_64_BIT_INODE],[])
 fi
 
 # Check for largefile support (must be after AC_SYS_LARGEFILE)
@@ -1223,7 +1237,7 @@ PGAC_FUNC_GETTIMEOFDAY_1ARG
 LIBS_including_readline="$LIBS"
 LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
 
-AC_CHECK_FUNCS([cbrt dlopen fdatasync getifaddrs getpeerucred getrlimit mbstowcs_l memmove poll pstat readlink setproctitle setsid sigprocmask symlink sync_file_range towlower utime utimes wcstombs wcstombs_l])
+AC_CHECK_FUNCS([cbrt dlopen fdatasync getifaddrs getpeerucred getrlimit mbstowcs_l memmove poll pstat readlink setproctitle setsid shm_open sigprocmask symlink sync_file_range towlower utime utimes wcstombs wcstombs_l])
 
 AC_REPLACE_FUNCS(fseeko)
 case $host_os in
@@ -1742,9 +1756,6 @@ operating system;  use --disable-thread-safety to disable thread safety.])
 fi
 fi
 
-# SunOS doesn't handle negative byte comparisons properly with +/- return
-AC_FUNC_MEMCMP
-
 
 # Select semaphore implementation type.
 if test "$PORTNAME" != "win32"; then
@@ -1913,7 +1924,7 @@ else
 fi
 
 AC_DEFINE_UNQUOTED(PG_VERSION_STR,
-                   ["PostgreSQL $PACKAGE_VERSION on $host, compiled by $cc_string, `expr $ac_cv_sizeof_void_p \* 8`-bit"],
+                   ["PostgreSQL $PG_VERSION on $host, compiled by $cc_string, `expr $ac_cv_sizeof_void_p \* 8`-bit"],
                    [A string containing the version number, platform, and C compiler])
 
 # Supply a numeric version string for use by 3rd party add-ons

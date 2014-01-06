@@ -37,34 +37,57 @@ static int	win32_check_directory_write_permissions(void);
  * If throw_error is true, this raises a PG_FATAL error and pg_upgrade
  * terminates; otherwise it is just reported as PG_REPORT and exec_prog()
  * returns false.
+ *
+ * The code requires it be called first from the primary thread on Windows.
  */
 bool
 exec_prog(const char *log_file, const char *opt_log_file,
 		  bool throw_error, const char *fmt,...)
 {
-	int			result;
+	int			result = 0;
 	int			written;
 
 #define MAXCMDLEN (2 * MAXPGPATH)
 	char		cmd[MAXCMDLEN];
-	mode_t		old_umask = 0;
 	FILE	   *log;
 	va_list		ap;
 
-	old_umask = umask(S_IRWXG | S_IRWXO);
+#ifdef WIN32
+static DWORD       mainThreadId = 0;
+
+	/* We assume we are called from the primary thread first */
+	if (mainThreadId == 0)
+		mainThreadId = GetCurrentThreadId();
+#endif
 
 	written = strlcpy(cmd, SYSTEMQUOTE, sizeof(cmd));
 	va_start(ap, fmt);
 	written += vsnprintf(cmd + written, MAXCMDLEN - written, fmt, ap);
 	va_end(ap);
 	if (written >= MAXCMDLEN)
-		pg_log(PG_FATAL, "command too long\n");
+		pg_fatal("command too long\n");
 	written += snprintf(cmd + written, MAXCMDLEN - written,
 						" >> \"%s\" 2>&1" SYSTEMQUOTE, log_file);
 	if (written >= MAXCMDLEN)
-		pg_log(PG_FATAL, "command too long\n");
+		pg_fatal("command too long\n");
 
-	log = fopen_priv(log_file, "a");
+	pg_log(PG_VERBOSE, "%s\n", cmd);
+
+#ifdef WIN32
+	/*
+	 * For some reason, Windows issues a file-in-use error if we write data
+	 * to the log file from a non-primary thread just before we create a
+	 * subprocess that also writes to the same log file.  One fix is to
+	 * sleep for 100ms.  A cleaner fix is to write to the log file _after_
+	 * the subprocess has completed, so we do this only when writing from
+	 * a non-primary thread.  fflush(), running system() twice, and
+	 * pre-creating the file do not see to help.
+	 */
+	if (mainThreadId != GetCurrentThreadId())
+		result = system(cmd);
+#endif
+
+	log = fopen(log_file, "a");
 
 #ifdef WIN32
 	{
@@ -80,18 +103,25 @@ exec_prog(const char *log_file, const char *opt_log_file,
 		for (iter = 0; iter < 4 && log == NULL; iter++)
 		{
 			sleep(1);
-			log = fopen_priv(log_file, "a");
+			log = fopen(log_file, "a");
 		}
 	}
 #endif
 
 	if (log == NULL)
-		pg_log(PG_FATAL, "cannot write to log file %s\n", log_file);
+		pg_fatal("cannot write to log file %s\n", log_file);
+
 #ifdef WIN32
-	fprintf(log, "\n\n");
+	/* Are we printing "command:" before its output? */
+	if (mainThreadId == GetCurrentThreadId())
+		fprintf(log, "\n\n");
 #endif
-	pg_log(PG_VERBOSE, "%s\n", cmd);
 	fprintf(log, "command: %s\n", cmd);
+#ifdef WIN32
+	/* Are we printing "command:" after its output? */
+	if (mainThreadId != GetCurrentThreadId())
+		fprintf(log, "\n\n");
+#endif
 
 	/*
 	 * In Windows, we must close the log file at this point so the file is not
@@ -99,9 +129,11 @@ exec_prog(const char *log_file, const char *opt_log_file,
 	 */
 	fclose(log);
 
-	result = system(cmd);
-
-	umask(old_umask);
+#ifdef WIN32
+	/* see comment above */
+	if (mainThreadId == GetCurrentThreadId())
+#endif
+		result = system(cmd);
 
 	if (result != 0)
 	{
@@ -123,7 +155,6 @@ exec_prog(const char *log_file, const char *opt_log_file,
 	}
 
 #ifndef WIN32
-
 	/*
 	 * We can't do this on Windows because it will keep the "pg_ctl start"
 	 * output filename open until the server stops, so we do the \n\n above on
@@ -131,8 +162,8 @@ exec_prog(const char *log_file, const char *opt_log_file,
 	 * never reused while the server is running, so it works fine.	We could
 	 * log these commands to a third file, but that just adds complexity.
 	 */
-	if ((log = fopen_priv(log_file, "a")) == NULL)
-		pg_log(PG_FATAL, "cannot write to log file %s\n", log_file);
+	if ((log = fopen(log_file, "a")) == NULL)
+		pg_fatal("cannot write to log file %s\n", log_file);
 	fprintf(log, "\n\n");
 	fclose(log);
 #endif
@@ -158,7 +189,7 @@ pid_lock_file_exists(const char *datadir)
 	{
 		/* ENOTDIR means we will throw a more useful error later */
 		if (errno != ENOENT && errno != ENOTDIR)
-			pg_log(PG_FATAL, "could not open file \"%s\" for reading: %s\n",
+			pg_fatal("could not open file \"%s\" for reading: %s\n",
 				   path, getErrorText(errno));
 
 		return false;
@@ -185,8 +216,7 @@ verify_directories(void)
 #else
 	if (win32_check_directory_write_permissions() != 0)
 #endif
-		pg_log(PG_FATAL,
-		  "You must have read and write access in the current directory.\n");
+		pg_fatal("You must have read and write access in the current directory.\n");
 
 	check_bin_dir(&old_cluster);
 	check_data_dir(old_cluster.pgdata);
@@ -319,10 +349,10 @@ validate_exec(const char *dir, const char *cmdName)
 	 * Ensure that the file exists and is a regular file.
 	 */
 	if (stat(path, &buf) < 0)
-		pg_log(PG_FATAL, "check for \"%s\" failed: %s\n",
+		pg_fatal("check for \"%s\" failed: %s\n",
 			   path, getErrorText(errno));
 	else if (!S_ISREG(buf.st_mode))
-		pg_log(PG_FATAL, "check for \"%s\" failed: not an executable file\n",
+		pg_fatal("check for \"%s\" failed: not an executable file\n",
 			   path);
 
 	/*
@@ -334,7 +364,7 @@ validate_exec(const char *dir, const char *cmdName)
 #else
 	if ((buf.st_mode & S_IRUSR) == 0)
 #endif
-		pg_log(PG_FATAL, "check for \"%s\" failed: cannot read file (permission denied)\n",
+		pg_fatal("check for \"%s\" failed: cannot read file (permission denied)\n",
 			   path);
 
 #ifndef WIN32
@@ -342,6 +372,6 @@ validate_exec(const char *dir, const char *cmdName)
 #else
 	if ((buf.st_mode & S_IXUSR) == 0)
 #endif
-		pg_log(PG_FATAL, "check for \"%s\" failed: cannot execute (permission denied)\n",
+		pg_fatal("check for \"%s\" failed: cannot execute (permission denied)\n",
 			   path);
 }

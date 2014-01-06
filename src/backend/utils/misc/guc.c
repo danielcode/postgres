@@ -61,6 +61,7 @@
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
+#include "storage/dsm_impl.h"
 #include "storage/standby.h"
 #include "storage/fd.h"
 #include "storage/proc.h"
@@ -125,8 +126,9 @@ extern char *default_tablespace;
 extern char *temp_tablespaces;
 extern bool ignore_checksum_failure;
 extern bool synchronize_seqscans;
-extern int	ssl_renegotiation_limit;
 extern char *SSLCipherSuites;
+extern char *SSLECDHCurve;
+extern bool SSLPreferServerCiphers;
 
 #ifdef TRACE_SORT
 extern bool trace_sort;
@@ -190,7 +192,9 @@ static const char *show_tcp_keepalives_idle(void);
 static const char *show_tcp_keepalives_interval(void);
 static const char *show_tcp_keepalives_count(void);
 static bool check_maxconnections(int *newval, void **extra, GucSource source);
+static bool check_max_worker_processes(int *newval, void **extra, GucSource source);
 static bool check_autovacuum_max_workers(int *newval, void **extra, GucSource source);
+static bool check_autovacuum_work_mem(int *newval, void **extra, GucSource source);
 static bool check_effective_io_concurrency(int *newval, void **extra, GucSource source);
 static void assign_effective_io_concurrency(int newval, void *extra);
 static void assign_pgstat_temp_directory(const char *newval, void *extra);
@@ -202,6 +206,10 @@ static const char *show_log_file_mode(void);
 static char *config_enum_get_options(struct config_enum * record,
 						const char *prefix, const char *suffix,
 						const char *separator);
+
+static bool validate_conf_option(struct config_generic * record,
+					 const char *name, const char *value, GucSource source,
+					 int elevel, bool freemem, void *newval, void **newextra);
 
 
 /*
@@ -384,6 +392,7 @@ static const struct config_enum_entry synchronous_commit_options[] = {
  */
 extern const struct config_enum_entry wal_level_options[];
 extern const struct config_enum_entry sync_method_options[];
+extern const struct config_enum_entry dynamic_shared_memory_options[];
 
 /*
  * GUC option variables that are exported from this module
@@ -443,8 +452,6 @@ int			tcp_keepalives_count;
  * cases provide the value for SHOW to display.  The real state is elsewhere
  * and is kept in sync by assign_hooks.
  */
-static char *log_destination_string;
-
 static char *syslog_ident_str;
 static bool phony_autocommit;
 static bool session_auth_is_superuser;
@@ -467,6 +474,7 @@ static int	max_identifier_length;
 static int	block_size;
 static int	segment_size;
 static int	wal_block_size;
+static bool	data_checksums;
 static int	wal_segment_size;
 static bool integer_datetimes;
 static int	effective_io_concurrency;
@@ -590,6 +598,8 @@ const char *const config_group_names[] =
 	gettext_noop("Client Connection Defaults / Statement Behavior"),
 	/* CLIENT_CONN_LOCALE */
 	gettext_noop("Client Connection Defaults / Locale and Formatting"),
+	/* CLIENT_CONN_PRELOAD */
+	gettext_noop("Client Connection Defaults / Shared Library Preloading"),
 	/* CLIENT_CONN_OTHER */
 	gettext_noop("Client Connection Defaults / Other Defaults"),
 	/* LOCK_MANAGEMENT */
@@ -798,6 +808,15 @@ static struct config_bool ConfigureNamesBool[] =
 		check_ssl, NULL, NULL
 	},
 	{
+		{"ssl_prefer_server_ciphers", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+			gettext_noop("Give priority to server ciphersuite order."),
+			NULL
+		},
+		&SSLPreferServerCiphers,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"fsync", PGC_SIGHUP, WAL_SETTINGS,
 			gettext_noop("Forces synchronization of updates to disk."),
 			gettext_noop("The server will use the fsync() system call in several places to make "
@@ -851,6 +870,17 @@ static struct config_bool ConfigureNamesBool[] =
 		true,
 		NULL, NULL, NULL
 	},
+
+	{
+		{"wal_log_hints", PGC_POSTMASTER, WAL_SETTINGS,
+			gettext_noop("Writes full pages to WAL when first modified after a checkpoint, even for a non-critical modifications"),
+			NULL
+		},
+		&wal_log_hints,
+		false,
+		NULL, NULL, NULL
+	},
+
 	{
 		{"log_checkpoints", PGC_SIGHUP, LOGGING_WHAT,
 			gettext_noop("Logs each checkpoint."),
@@ -996,7 +1026,7 @@ static struct config_bool ConfigureNamesBool[] =
 #ifdef BTREE_BUILD_STATS
 	{
 		{"log_btree_build_stats", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
+			gettext_noop("Logs system resource usage statistics (memory and CPU) on various B-tree operations."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
@@ -1070,7 +1100,7 @@ static struct config_bool ConfigureNamesBool[] =
 #ifdef LOCK_DEBUG
 	{
 		{"trace_locks", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
+			gettext_noop("Emits information about lock usage."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
@@ -1080,7 +1110,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	{
 		{"trace_userlocks", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
+			gettext_noop("Emits information about user lock usage."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
@@ -1090,7 +1120,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	{
 		{"trace_lwlocks", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
+			gettext_noop("Emits information about lightweight lock usage."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
@@ -1100,7 +1130,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	{
 		{"debug_deadlocks", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
+			gettext_noop("Dumps information about all current locks when a deadlock timeout occurs."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
@@ -1456,6 +1486,17 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
+	{
+		{"data_checksums", PGC_INTERNAL, PRESET_OPTIONS,
+			gettext_noop("Shows whether data checksums are turned on for this cluster"),
+			NULL,
+			GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
+		},
+		&data_checksums,
+		false,
+		NULL, NULL, NULL
+	},
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, false, NULL, NULL, NULL
@@ -1604,7 +1645,7 @@ static struct config_int ConfigureNamesInt[] =
 
 	{
 		{"wal_receiver_timeout", PGC_SIGHUP, REPLICATION_STANDBY,
-			gettext_noop("Sets the maximum wait time to receive data from master."),
+			gettext_noop("Sets the maximum wait time to receive data from the primary."),
 			NULL,
 			GUC_UNIT_MS
 		},
@@ -1847,8 +1888,8 @@ static struct config_int ConfigureNamesInt[] =
 #ifdef LOCK_DEBUG
 	{
 		{"trace_lock_oidmin", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
-			NULL,
+			gettext_noop("Sets the minimum OID of tables for tracking locks."),
+			gettext_noop("Is used to avoid output on system tables."),
 			GUC_NOT_IN_SAMPLE
 		},
 		&Trace_lock_oidmin,
@@ -1857,7 +1898,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 	{
 		{"trace_lock_table", PGC_SUSET, DEVELOPER_OPTIONS,
-			gettext_noop("No description available."),
+			gettext_noop("Sets the OID of the table with unconditionally lock tracing."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
@@ -2037,6 +2078,17 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"xloginsert_slots", PGC_POSTMASTER, WAL_SETTINGS,
+			gettext_noop("Sets the number of slots for concurrent xlog insertions."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&num_xloginsert_slots,
+		8, 1, 1000,
+		NULL, NULL, NULL
+	},
+
+	{
 		/* see max_connections */
 		{"max_wal_senders", PGC_POSTMASTER, REPLICATION_SENDING,
 			gettext_noop("Sets the maximum number of simultaneously running WAL sender processes."),
@@ -2156,6 +2208,18 @@ static struct config_int ConfigureNamesInt[] =
 		0, 0, 0,
 #endif
 		check_effective_io_concurrency, assign_effective_io_concurrency, NULL
+	},
+
+	{
+		{"max_worker_processes",
+			PGC_POSTMASTER,
+			RESOURCES_ASYNCHRONOUS,
+			gettext_noop("Maximum number of concurrent worker processes."),
+			NULL,
+		},
+		&max_worker_processes,
+		8, 1, MAX_BACKENDS,
+		check_max_worker_processes, NULL, NULL
 	},
 
 	{
@@ -2310,6 +2374,17 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
+		{"autovacuum_work_mem", PGC_SIGHUP, RESOURCES_MEM,
+			gettext_noop("Sets the maximum memory to be used by each autovacuum worker process."),
+			NULL,
+			GUC_UNIT_KB
+		},
+		&autovacuum_work_mem,
+		-1, -1, MAX_KILOBYTES,
+		check_autovacuum_work_mem, NULL, NULL
+	},
+
+	{
 		{"tcp_keepalives_idle", PGC_USERSET, CLIENT_CONN_OTHER,
 			gettext_noop("Time between issuing TCP keepalives."),
 			gettext_noop("A value of 0 uses the system default."),
@@ -2374,8 +2449,8 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_BLOCKS,
 		},
 		&effective_cache_size,
-		DEFAULT_EFFECTIVE_CACHE_SIZE, 1, INT_MAX,
-		NULL, NULL, NULL
+		-1, -1, INT_MAX,
+		check_effective_cache_size, NULL, NULL
 	},
 
 	{
@@ -2746,7 +2821,18 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"shared_preload_libraries", PGC_POSTMASTER, RESOURCES_KERNEL,
+		{"session_preload_libraries", PGC_SUSET, CLIENT_CONN_PRELOAD,
+			gettext_noop("Lists shared libraries to preload into each backend."),
+			NULL,
+			GUC_LIST_INPUT | GUC_LIST_QUOTE | GUC_SUPERUSER_ONLY
+		},
+		&session_preload_libraries_string,
+		"",
+		NULL, NULL, NULL
+	},
+
+	{
+		{"shared_preload_libraries", PGC_POSTMASTER, CLIENT_CONN_PRELOAD,
 			gettext_noop("Lists shared libraries to preload into server."),
 			NULL,
 			GUC_LIST_INPUT | GUC_LIST_QUOTE | GUC_SUPERUSER_ONLY
@@ -2757,8 +2843,8 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"local_preload_libraries", PGC_BACKEND, CLIENT_CONN_OTHER,
-			gettext_noop("Lists shared libraries to preload into each backend."),
+		{"local_preload_libraries", PGC_BACKEND, CLIENT_CONN_PRELOAD,
+			gettext_noop("Lists unprivileged shared libraries to preload into each backend."),
 			NULL,
 			GUC_LIST_INPUT | GUC_LIST_QUOTE
 		},
@@ -2834,7 +2920,7 @@ static struct config_string ConfigureNamesString[] =
 						 "depending on the platform."),
 			GUC_LIST_INPUT
 		},
-		&log_destination_string,
+		&Log_destination_string,
 		"stderr",
 		check_log_destination, assign_log_destination, NULL
 	},
@@ -3093,6 +3179,21 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
+		{"ssl_ecdh_curve", PGC_POSTMASTER, CONN_AUTH_SECURITY,
+			gettext_noop("Sets the curve to use for ECDH."),
+			NULL,
+			GUC_SUPERUSER_ONLY
+		},
+		&SSLECDHCurve,
+#ifdef USE_SSL
+		"prime256v1",
+#else
+		"none",
+#endif
+		NULL, NULL, NULL
+	},
+
+	{
 		{"application_name", PGC_USERSET, LOGGING_WHAT,
 			gettext_noop("Sets the application name to be reported in statistics and logs."),
 			NULL,
@@ -3289,6 +3390,16 @@ static struct config_enum ConfigureNamesEnum[] =
 	},
 
 	{
+		{"dynamic_shared_memory_type", PGC_POSTMASTER, RESOURCES_MEM,
+			gettext_noop("Selects the dynamic shared memory implementation used."),
+			NULL
+		},
+		&dynamic_shared_memory_type,
+		DEFAULT_DYNAMIC_SHARED_MEMORY_TYPE, dynamic_shared_memory_options,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"wal_sync_method", PGC_SIGHUP, WAL_SETTINGS,
 			gettext_noop("Selects the method used for forcing WAL updates to disk."),
 			NULL
@@ -3377,6 +3488,9 @@ static void ShowAllGUCConfig(DestReceiver *dest);
 static char *_ShowOption(struct config_generic * record, bool use_units);
 static bool validate_option_array_item(const char *name, const char *value,
 						   bool skipIfNoPermissions);
+static void write_auto_conf_file(int fd, const char *filename, ConfigVariable **head_p);
+static void replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **tail_p,
+						  char *config_file, char *name, char *value);
 
 
 /*
@@ -4190,6 +4304,8 @@ SelectConfigFiles(const char *userDoption, const char *progname)
 	 * be the real desired default.
 	 */
 	pg_timezone_abbrev_initialize();
+
+	set_default_effective_cache_size();
 
 	/*
 	 * Figure out where pg_hba.conf is, and make sure the path is absolute.
@@ -5139,6 +5255,220 @@ config_enum_get_options(struct config_enum * record, const char *prefix,
 	return retstr.data;
 }
 
+/*
+ * Validates configuration parameter and value, by calling check hook functions
+ * depending on record's vartype. It validates if the parameter
+ * value given is in range of expected predefined value for that parameter.
+ *
+ * freemem - true indicates memory for newval and newextra will be
+ *			 freed in this function, false indicates it will be freed
+ *			 by caller.
+ * Return value:
+ *	1: the value is valid
+ *	0: the name or value is invalid
+ */
+bool
+validate_conf_option(struct config_generic * record, const char *name,
+					 const char *value, GucSource source, int elevel,
+					 bool freemem, void *newval, void **newextra)
+{
+	/*
+	 * Validate the value for the passed record, to ensure it is in expected
+	 * range.
+	 */
+	switch (record->vartype)
+	{
+
+		case PGC_BOOL:
+			{
+				struct config_bool *conf = (struct config_bool *) record;
+				bool		tmpnewval;
+
+				if (newval == NULL)
+					newval = &tmpnewval;
+
+				if (value != NULL)
+				{
+					if (!parse_bool(value, newval))
+					{
+						ereport(elevel,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("parameter \"%s\" requires a Boolean value",
+								 name)));
+						return 0;
+					}
+
+					if (!call_bool_check_hook(conf, newval, newextra,
+											  source, elevel))
+						return 0;
+
+					if (*newextra && freemem)
+						free(*newextra);
+				}
+			}
+			break;
+		case PGC_INT:
+			{
+				struct config_int *conf = (struct config_int *) record;
+				int			tmpnewval;
+
+				if (newval == NULL)
+					newval = &tmpnewval;
+
+				if (value != NULL)
+				{
+					const char *hintmsg;
+
+					if (!parse_int(value, newval, conf->gen.flags, &hintmsg))
+					{
+						ereport(elevel,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								 name, value),
+								 hintmsg ? errhint("%s", _(hintmsg)) : 0));
+						return 0;
+					}
+
+					if (*((int *) newval) < conf->min || *((int *) newval) > conf->max)
+					{
+						ereport(elevel,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("%d is outside the valid range for parameter \"%s\" (%d .. %d)",
+										*((int *) newval), name, conf->min, conf->max)));
+						return 0;
+					}
+
+					if (!call_int_check_hook(conf, newval, newextra,
+											 source, elevel))
+						return 0;
+
+					if (*newextra && freemem)
+						free(*newextra);
+				}
+			}
+			break;
+		case PGC_REAL:
+			{
+				struct config_real *conf = (struct config_real *) record;
+				double		tmpnewval;
+
+				if (newval == NULL)
+					newval = &tmpnewval;
+
+				if (value != NULL)
+				{
+					if (!parse_real(value, newval))
+					{
+						ereport(elevel,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("parameter \"%s\" requires a numeric value",
+								 name)));
+						return 0;
+					}
+
+					if (*((double *) newval) < conf->min || *((double *) newval) > conf->max)
+					{
+						ereport(elevel,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("%g is outside the valid range for parameter \"%s\" (%g .. %g)",
+										*((double *) newval), name, conf->min, conf->max)));
+						return 0;
+					}
+
+					if (!call_real_check_hook(conf, newval, newextra,
+											  source, elevel))
+						return 0;
+
+					if (*newextra && freemem)
+						free(*newextra);
+				}
+			}
+			break;
+		case PGC_STRING:
+			{
+				struct config_string *conf = (struct config_string *) record;
+				char	   *tempPtr;
+				char	  **tmpnewval = newval;
+
+				if (newval == NULL)
+					tmpnewval = &tempPtr;
+
+				if (value != NULL)
+				{
+					/*
+					 * The value passed by the caller could be transient, so
+					 * we always strdup it.
+					 */
+					*tmpnewval = guc_strdup(elevel, value);
+					if (*tmpnewval == NULL)
+						return 0;
+
+					/*
+					 * The only built-in "parsing" check we have is to apply
+					 * truncation if GUC_IS_NAME.
+					 */
+					if (conf->gen.flags & GUC_IS_NAME)
+						truncate_identifier(*tmpnewval, strlen(*tmpnewval), true);
+
+					if (!call_string_check_hook(conf, tmpnewval, newextra,
+												source, elevel))
+					{
+						free(*tmpnewval);
+						return 0;
+					}
+
+					/* Free the malloc'd data if any */
+					if (freemem)
+					{
+						if (*tmpnewval != NULL)
+							free(*tmpnewval);
+						if (*newextra != NULL)
+							free(*newextra);
+					}
+				}
+			}
+			break;
+		case PGC_ENUM:
+			{
+				struct config_enum *conf = (struct config_enum *) record;
+				int			tmpnewval;
+
+				if (newval == NULL)
+					newval = &tmpnewval;
+
+				if (value != NULL)
+				{
+					if (!config_enum_lookup_by_name(conf, value, newval))
+					{
+						char	   *hintmsg;
+
+						hintmsg = config_enum_get_options(conf,
+														"Available values: ",
+														  ".", ", ");
+
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("invalid value for parameter \"%s\": \"%s\"",
+										name, value),
+										hintmsg ? errhint("%s", _(hintmsg)) : 0));
+
+						if (hintmsg != NULL)
+							pfree(hintmsg);
+						return 0;
+					}
+					if (!call_enum_check_hook(conf, newval, newextra,
+											  source, LOG))
+						return 0;
+
+					if (*newextra && freemem)
+						free(*newextra);
+				}
+			}
+			break;
+	}
+	return 1;
+}
+
 
 /*
  * Sets option `name' to given value.
@@ -5387,16 +5717,9 @@ set_config_option(const char *name, const char *value,
 
 				if (value)
 				{
-					if (!parse_bool(value, &newval))
-					{
-						ereport(elevel,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						  errmsg("parameter \"%s\" requires a Boolean value",
-								 name)));
-						return 0;
-					}
-					if (!call_bool_check_hook(conf, &newval, &newextra,
-											  source, elevel))
+					if (!validate_conf_option(record, name, value, source,
+											  elevel, false, &newval,
+											  &newextra))
 						return 0;
 				}
 				else if (source == PGC_S_DEFAULT)
@@ -5480,27 +5803,9 @@ set_config_option(const char *name, const char *value,
 
 				if (value)
 				{
-					const char *hintmsg;
-
-					if (!parse_int(value, &newval, conf->gen.flags, &hintmsg))
-					{
-						ereport(elevel,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid value for parameter \"%s\": \"%s\"",
-								name, value),
-								 hintmsg ? errhint("%s", _(hintmsg)) : 0));
-						return 0;
-					}
-					if (newval < conf->min || newval > conf->max)
-					{
-						ereport(elevel,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("%d is outside the valid range for parameter \"%s\" (%d .. %d)",
-										newval, name, conf->min, conf->max)));
-						return 0;
-					}
-					if (!call_int_check_hook(conf, &newval, &newextra,
-											 source, elevel))
+					if (!validate_conf_option(record, name, value, source,
+											  elevel, false, &newval,
+											  &newextra))
 						return 0;
 				}
 				else if (source == PGC_S_DEFAULT)
@@ -5584,24 +5889,9 @@ set_config_option(const char *name, const char *value,
 
 				if (value)
 				{
-					if (!parse_real(value, &newval))
-					{
-						ereport(elevel,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						  errmsg("parameter \"%s\" requires a numeric value",
-								 name)));
-						return 0;
-					}
-					if (newval < conf->min || newval > conf->max)
-					{
-						ereport(elevel,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("%g is outside the valid range for parameter \"%s\" (%g .. %g)",
-										newval, name, conf->min, conf->max)));
-						return 0;
-					}
-					if (!call_real_check_hook(conf, &newval, &newextra,
-											  source, elevel))
+					if (!validate_conf_option(record, name, value, source,
+											  elevel, false, &newval,
+											  &newextra))
 						return 0;
 				}
 				else if (source == PGC_S_DEFAULT)
@@ -5685,27 +5975,10 @@ set_config_option(const char *name, const char *value,
 
 				if (value)
 				{
-					/*
-					 * The value passed by the caller could be transient, so
-					 * we always strdup it.
-					 */
-					newval = guc_strdup(elevel, value);
-					if (newval == NULL)
+					if (!validate_conf_option(record, name, value, source,
+											  elevel, false, &newval,
+											  &newextra))
 						return 0;
-
-					/*
-					 * The only built-in "parsing" check we have is to apply
-					 * truncation if GUC_IS_NAME.
-					 */
-					if (conf->gen.flags & GUC_IS_NAME)
-						truncate_identifier(newval, strlen(newval), true);
-
-					if (!call_string_check_hook(conf, &newval, &newextra,
-												source, elevel))
-					{
-						free(newval);
-						return 0;
-					}
 				}
 				else if (source == PGC_S_DEFAULT)
 				{
@@ -5811,26 +6084,9 @@ set_config_option(const char *name, const char *value,
 
 				if (value)
 				{
-					if (!config_enum_lookup_by_name(conf, value, &newval))
-					{
-						char	   *hintmsg;
-
-						hintmsg = config_enum_get_options(conf,
-														"Available values: ",
-														  ".", ", ");
-
-						ereport(elevel,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid value for parameter \"%s\": \"%s\"",
-								name, value),
-								 hintmsg ? errhint("%s", _(hintmsg)) : 0));
-
-						if (hintmsg)
-							pfree(hintmsg);
-						return 0;
-					}
-					if (!call_enum_check_hook(conf, &newval, &newextra,
-											  source, elevel))
+					if (!validate_conf_option(record, name, value, source,
+											  elevel, false, &newval,
+											  &newextra))
 						return 0;
 				}
 				else if (source == PGC_S_DEFAULT)
@@ -6127,7 +6383,7 @@ flatten_set_variable_args(const char *name, List *args)
 		A_Const    *con;
 
 		if (l != list_head(args))
-			appendStringInfo(&buf, ", ");
+			appendStringInfoString(&buf, ", ");
 
 		if (IsA(arg, TypeCast))
 		{
@@ -6200,12 +6456,301 @@ flatten_set_variable_args(const char *name, List *args)
 	return buf.data;
 }
 
+/*
+ * Writes updated configuration parameter values into
+ * postgresql.auto.conf.temp file. It traverses the list of parameters
+ * and quote the string values before writing them to temporaray file.
+ */
+static void
+write_auto_conf_file(int fd, const char *filename, ConfigVariable **head_p)
+{
+	ConfigVariable *item;
+	StringInfoData buf;
+
+	initStringInfo(&buf);
+	appendStringInfoString(&buf, "# Do not edit this file manually! \n");
+	appendStringInfoString(&buf, "# It will be overwritten by ALTER SYSTEM command. \n");
+
+	/*
+	 * write the file header message before contents, so that if there is no
+	 * item it can contain message
+	 */
+	if (write(fd, buf.data, buf.len) < 0)
+		ereport(ERROR,
+				(errmsg("failed to write to \"%s\" file", filename)));
+	resetStringInfo(&buf);
+
+	/*
+	 * traverse the list of parameters, quote the string parameter and write
+	 * it to file. Once all parameters are written fsync the file.
+	 */
+
+	for (item = *head_p; item != NULL; item = item->next)
+	{
+		char	   *escaped;
+
+		appendStringInfoString(&buf, item->name);
+		appendStringInfoString(&buf, " = ");
+
+		appendStringInfoString(&buf, "\'");
+		escaped = escape_single_quotes_ascii(item->value);
+		appendStringInfoString(&buf, escaped);
+		free(escaped);
+		appendStringInfoString(&buf, "\'");
+
+		appendStringInfoString(&buf, "\n");
+
+		if (write(fd, buf.data, buf.len) < 0)
+			ereport(ERROR,
+					(errmsg("failed to write to \"%s\" file", filename)));
+		resetStringInfo(&buf);
+	}
+
+	if (pg_fsync(fd) != 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not fsync file \"%s\": %m", filename)));
+
+	pfree(buf.data);
+}
+
+
+/*
+ * This function takes list of all configuration parameters in
+ * postgresql.auto.conf and parameter to be updated as input arguments and
+ * replace the updated configuration parameter value in a list. If the
+ * parameter to be updated is new then it is appended to the list of
+ * parameters.
+ */
+static void
+replace_auto_config_value(ConfigVariable **head_p, ConfigVariable **tail_p,
+						  char *config_file,
+						  char *name, char *value)
+{
+	ConfigVariable *item,
+			   *prev = NULL;
+
+	if (*head_p != NULL)
+	{
+		for (item = *head_p; item != NULL; item = item->next)
+		{
+			if (strcmp(item->name, name) == 0)
+			{
+				pfree(item->value);
+				if (value != NULL)
+					/* update the parameter value */
+					item->value = pstrdup(value);
+				else
+				{
+					/* delete the configuration parameter from list */
+					if (*head_p == item)
+						*head_p = item->next;
+					else
+						prev->next = item->next;
+
+					if (*tail_p == item)
+						*tail_p = prev;
+
+					pfree(item->name);
+					pfree(item->filename);
+					pfree(item);
+				}
+				return;
+			}
+			prev = item;
+		}
+	}
+
+	if (value == NULL)
+		return;
+
+	item = palloc(sizeof *item);
+	item->name = pstrdup(name);
+	item->value = pstrdup(value);
+	item->filename = pstrdup(config_file);
+	item->next = NULL;
+
+	if (*head_p == NULL)
+	{
+		item->sourceline = 1;
+		*head_p = item;
+	}
+	else
+	{
+		item->sourceline = (*tail_p)->sourceline + 1;
+		(*tail_p)->next = item;
+	}
+
+	*tail_p = item;
+
+	return;
+}
+
+
+/*
+ * Persist the configuration parameter value.
+ *
+ * This function takes all previous configuration parameters
+ * set by ALTER SYSTEM command and the currently set ones
+ * and write them all to the automatic configuration file.
+ *
+ * The configuration parameters are written to a temporary
+ * file then renamed to the final name. The template for the
+ * temporary file is postgresql.auto.conf.temp.
+ *
+ * An LWLock is used to serialize writing to the same file.
+ *
+ * In case of an error, we leave the original automatic
+ * configuration file (postgresql.auto.conf) intact.
+ */
+void
+AlterSystemSetConfigFile(AlterSystemStmt * altersysstmt)
+{
+	char	   *name;
+	char	   *value;
+	int			Tmpfd = -1;
+	FILE	   *infile;
+	struct config_generic *record;
+	ConfigVariable *head = NULL;
+	ConfigVariable *tail = NULL;
+	char		AutoConfFileName[MAXPGPATH];
+	char		AutoConfTmpFileName[MAXPGPATH];
+	struct stat st;
+	void	   *newextra = NULL;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 (errmsg("must be superuser to execute ALTER SYSTEM command"))));
+
+	/*
+	 * Validate the name and arguments [value1, value2 ... ].
+	 */
+	name = altersysstmt->setstmt->name;
+
+	switch (altersysstmt->setstmt->kind)
+	{
+		case VAR_SET_VALUE:
+			value = ExtractSetVariableArgs(altersysstmt->setstmt);
+			break;
+
+		case VAR_SET_DEFAULT:
+			value = NULL;
+			break;
+		default:
+			elog(ERROR, "unrecognized alter system stmt type: %d",
+				 altersysstmt->setstmt->kind);
+			break;
+	}
+
+	record = find_option(name, false, LOG);
+	if (record == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("unrecognized configuration parameter \"%s\"", name)));
+
+	if ((record->context == PGC_INTERNAL) ||
+		(record->flags & GUC_DISALLOW_IN_FILE))
+		ereport(ERROR,
+				(errcode(ERRCODE_CANT_CHANGE_RUNTIME_PARAM),
+				 errmsg("parameter \"%s\" cannot be changed",
+						name)));
+
+	if (!validate_conf_option(record, name, value, PGC_S_FILE,
+							  ERROR, true, NULL,
+							  &newextra))
+		ereport(ERROR,
+				(errmsg("invalid value for parameter \"%s\": \"%s\"", name, value)));
+
+
+	/*
+	 * Use data directory as reference path for postgresql.auto.conf and it's
+	 * corresponding temp file
+	 */
+	join_path_components(AutoConfFileName, data_directory, PG_AUTOCONF_FILENAME);
+	canonicalize_path(AutoConfFileName);
+	snprintf(AutoConfTmpFileName, sizeof(AutoConfTmpFileName), "%s.%s",
+			 AutoConfFileName,
+			 "temp");
+
+	/*
+	 * one backend is allowed to operate on postgresql.auto.conf file, to
+	 * ensure that we need to update the contents of the file with
+	 * AutoFileLock. To ensure crash safety, first the contents are written to
+	 * temporary file and then rename it to postgresql.auto.conf. In case
+	 * there exists a temp file from previous crash, that can be reused.
+	 */
+
+	LWLockAcquire(AutoFileLock, LW_EXCLUSIVE);
+
+	Tmpfd = open(AutoConfTmpFileName, O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
+	if (Tmpfd < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("failed to open auto conf temp file \"%s\": %m ",
+						AutoConfTmpFileName)));
+
+	PG_TRY();
+	{
+		if (stat(AutoConfFileName, &st) == 0)
+		{
+			/* open postgresql.auto.conf file */
+			infile = AllocateFile(AutoConfFileName, "r");
+			if (infile == NULL)
+				ereport(ERROR,
+						(errmsg("failed to open auto conf file \"%s\": %m ",
+								AutoConfFileName)));
+
+			/* Parse the postgresql.auto.conf file */
+			ParseConfigFp(infile, AutoConfFileName, 0, LOG, &head, &tail);
+
+			FreeFile(infile);
+		}
+
+		/*
+		 * replace with new value if the configuration parameter already
+		 * exists OR add it as a new cofiguration parameter in the file.
+		 */
+		replace_auto_config_value(&head, &tail, AutoConfFileName, name, value);
+
+		/* Write and sync the New contents to postgresql.auto.conf.temp file */
+		write_auto_conf_file(Tmpfd, AutoConfTmpFileName, &head);
+
+		close(Tmpfd);
+		Tmpfd = -1;
+
+		/*
+		 * As the rename is atomic operation, if any problem occurs after this
+		 * at max it can loose the parameters set by last ALTER SYSTEM
+		 * command.
+		 */
+		if (rename(AutoConfTmpFileName, AutoConfFileName) < 0)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not rename file \"%s\" to \"%s\" : %m",
+							AutoConfTmpFileName, AutoConfFileName)));
+	}
+	PG_CATCH();
+	{
+		if (Tmpfd >= 0)
+			close(Tmpfd);
+
+		unlink(AutoConfTmpFileName);
+		FreeConfigVariables(head);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	FreeConfigVariables(head);
+	LWLockRelease(AutoFileLock);
+	return;
+}
 
 /*
  * SET command
  */
 void
-ExecSetVariableStmt(VariableSetStmt *stmt)
+ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 {
 	GucAction	action = stmt->is_local ? GUC_ACTION_LOCAL : GUC_ACTION_SET;
 
@@ -6213,6 +6758,8 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 	{
 		case VAR_SET_VALUE:
 		case VAR_SET_CURRENT:
+			if (stmt->is_local)
+				WarnNoTransactionChain(isTopLevel, "SET LOCAL");
 			(void) set_config_option(stmt->name,
 									 ExtractSetVariableArgs(stmt),
 									 (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -6222,7 +6769,6 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 									 0);
 			break;
 		case VAR_SET_MULTI:
-
 			/*
 			 * Special-case SQL syntaxes.  The TRANSACTION and SESSION
 			 * CHARACTERISTICS cases effectively set more than one variable
@@ -6233,6 +6779,8 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 			if (strcmp(stmt->name, "TRANSACTION") == 0)
 			{
 				ListCell   *head;
+
+				WarnNoTransactionChain(isTopLevel, "SET TRANSACTION");
 
 				foreach(head, stmt->args)
 				{
@@ -6282,6 +6830,8 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 					ereport(ERROR,
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 							 errmsg("SET LOCAL TRANSACTION SNAPSHOT is not implemented")));
+
+				WarnNoTransactionChain(isTopLevel, "SET TRANSACTION");
 				Assert(IsA(con, A_Const));
 				Assert(nodeTag(&con->val) == T_String);
 				ImportSnapshot(strVal(&con->val));
@@ -6291,7 +6841,13 @@ ExecSetVariableStmt(VariableSetStmt *stmt)
 					 stmt->name);
 			break;
 		case VAR_SET_DEFAULT:
+			if (stmt->is_local)
+				WarnNoTransactionChain(isTopLevel, "SET LOCAL");
+			/* fall through */
 		case VAR_RESET:
+			if (strcmp(stmt->name, "transaction_isolation") == 0)
+				WarnNoTransactionChain(isTopLevel, "RESET TRANSACTION");
+
 			(void) set_config_option(stmt->name,
 									 NULL,
 									 (superuser() ? PGC_SUSET : PGC_USERSET),
@@ -7867,8 +8423,7 @@ GUCArrayAdd(ArrayType *array, const char *name, const char *value)
 		name = record->name;
 
 	/* build new item for array */
-	newval = palloc(strlen(name) + 1 + strlen(value) + 1);
-	sprintf(newval, "%s=%s", name, value);
+	newval = psprintf("%s=%s", name, value);
 	datum = CStringGetTextDatum(newval);
 
 	if (array)
@@ -8667,8 +9222,8 @@ show_tcp_keepalives_count(void)
 static bool
 check_maxconnections(int *newval, void **extra, GucSource source)
 {
-	if (*newval + GetNumShmemAttachedBgworkers() + autovacuum_max_workers + 1 >
-		MAX_BACKENDS)
+	if (*newval + autovacuum_max_workers + 1 +
+		max_worker_processes > MAX_BACKENDS)
 		return false;
 	return true;
 }
@@ -8676,8 +9231,38 @@ check_maxconnections(int *newval, void **extra, GucSource source)
 static bool
 check_autovacuum_max_workers(int *newval, void **extra, GucSource source)
 {
-	if (MaxConnections + *newval + 1 + GetNumShmemAttachedBgworkers() >
-		MAX_BACKENDS)
+	if (MaxConnections + *newval + 1 + max_worker_processes > MAX_BACKENDS)
+		return false;
+	return true;
+}
+
+static bool
+check_autovacuum_work_mem(int *newval, void **extra, GucSource source)
+{
+	/*
+	 * -1 indicates fallback.
+	 *
+	 * If we haven't yet changed the boot_val default of -1, just let it be.
+	 * Autovacuum will look to maintenance_work_mem instead.
+	 */
+	if (*newval == -1)
+		return true;
+
+	/*
+	 * We clamp manually-set values to at least 1MB.  Since
+	 * maintenance_work_mem is always set to at least this value, do the same
+	 * here.
+	 */
+	if (*newval < 1024)
+		*newval = 1024;
+
+	return true;
+}
+
+static bool
+check_max_worker_processes(int *newval, void **extra, GucSource source)
+{
+	if (MaxConnections + autovacuum_max_workers + 1 + *newval > MAX_BACKENDS)
 		return false;
 	return true;
 }

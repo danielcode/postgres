@@ -104,7 +104,7 @@ regprocin(PG_FUNCTION_ARGS)
 
 		hdesc = heap_open(ProcedureRelationId, AccessShareLock);
 		sysscan = systable_beginscan(hdesc, ProcedureNameArgsNspIndexId, true,
-									 SnapshotNow, 1, skey);
+									 NULL, 1, skey);
 
 		while (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 		{
@@ -472,7 +472,7 @@ regoperin(PG_FUNCTION_ARGS)
 
 		hdesc = heap_open(OperatorRelationId, AccessShareLock);
 		sysscan = systable_beginscan(hdesc, OperatorNameNspIndexId, true,
-									 SnapshotNow, 1, skey);
+									 NULL, 1, skey);
 
 		while (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 		{
@@ -716,7 +716,7 @@ format_operator_internal(Oid operator_oid, bool force_qualify)
 							 format_type_be_qualified(operform->oprleft) :
 							 format_type_be(operform->oprleft));
 		else
-			appendStringInfo(&buf, "NONE,");
+			appendStringInfoString(&buf, "NONE,");
 
 		if (operform->oprright)
 			appendStringInfo(&buf, "%s)",
@@ -724,7 +724,7 @@ format_operator_internal(Oid operator_oid, bool force_qualify)
 							 format_type_be_qualified(operform->oprright) :
 							 format_type_be(operform->oprright));
 		else
-			appendStringInfo(&buf, "NONE)");
+			appendStringInfoString(&buf, "NONE)");
 
 		result = buf.data;
 
@@ -843,7 +843,7 @@ regclassin(PG_FUNCTION_ARGS)
 
 		hdesc = heap_open(RelationRelationId, AccessShareLock);
 		sysscan = systable_beginscan(hdesc, ClassNameNspIndexId, true,
-									 SnapshotNow, 1, skey);
+									 NULL, 1, skey);
 
 		if (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 			result = HeapTupleGetOid(tuple);
@@ -1007,7 +1007,7 @@ regtypein(PG_FUNCTION_ARGS)
 
 		hdesc = heap_open(TypeRelationId, AccessShareLock);
 		sysscan = systable_beginscan(hdesc, TypeNameNspIndexId, true,
-									 SnapshotNow, 1, skey);
+									 NULL, 1, skey);
 
 		if (HeapTupleIsValid(tuple = systable_getnext(sysscan)))
 			result = HeapTupleGetOid(tuple);

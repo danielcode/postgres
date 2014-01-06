@@ -483,7 +483,8 @@ typedef struct
        with an entry having a null <structfield>keyword</> pointer.  The
        null pointer is returned if memory could not be allocated. Note that
        the current default values (<structfield>val</structfield> fields)
-       will depend on environment variables and other context.  Callers
+       will depend on environment variables and other context.  A
+       missing or invalid service file will be silently ignored.  Callers
        must treat the connection options data as read-only.
       </para>
 
@@ -2712,9 +2713,9 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
           <term><symbol>PG_DIAG_TABLE_NAME</></term>
           <listitem>
            <para>
-            If the error was associated with a specific table, the name of
-            the table.  (When this field is present, the schema name field
-            provides the name of the table's schema.)
+            If the error was associated with a specific table, the name of the
+            table.  (Refer to the schema name field for the name of the
+            table's schema.)
            </para>
           </listitem>
          </varlistentry>
@@ -2723,9 +2724,9 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
           <term><symbol>PG_DIAG_COLUMN_NAME</></term>
           <listitem>
            <para>
-            If the error was associated with a specific table column, the
-            name of the column.  (When this field is present, the schema
-            and table name fields identify the table.)
+            If the error was associated with a specific table column, the name
+            of the column.  (Refer to the schema and table name fields to
+            identify the table.)
            </para>
           </listitem>
          </varlistentry>
@@ -2734,9 +2735,9 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
           <term><symbol>PG_DIAG_DATATYPE_NAME</></term>
           <listitem>
            <para>
-            If the error was associated with a specific data type, the name
-            of the data type.  (When this field is present, the schema name
-            field provides the name of the data type's schema.)
+            If the error was associated with a specific data type, the name of
+            the data type.  (Refer to the schema name field for the name of
+            the data type's schema.)
            </para>
           </listitem>
          </varlistentry>
@@ -2745,11 +2746,11 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
           <term><symbol>PG_DIAG_CONSTRAINT_NAME</></term>
           <listitem>
            <para>
-            If the error was associated with a specific constraint,
-            the name of the constraint.  The table or domain that the
-            constraint belongs to is reported using the fields listed
-            above.  (For this purpose, indexes are treated as constraints,
-            even if they weren't created with constraint syntax.)
+            If the error was associated with a specific constraint, the name
+            of the constraint.  Refer to fields listed above for the
+            associated table or domain.  (For this purpose, indexes are
+            treated as constraints, even if they weren't created with
+            constraint syntax.)
            </para>
           </listitem>
          </varlistentry>
@@ -2787,9 +2788,14 @@ char *PQresultErrorField(const PGresult *res, int fieldcode);
 
        <note>
         <para>
-         The fields for schema name, table name, column name, data type
-         name, and constraint name are supplied only for a limited number
-         of error types; see <xref linkend="errcodes-appendix">.
+         The fields for schema name, table name, column name, data type name,
+         and constraint name are supplied only for a limited number of error
+         types; see <xref linkend="errcodes-appendix">.  Do not assume that
+         the presence of any of these fields guarantees the presence of
+         another field.  Core error sources observe the interrelationships
+         noted above, but user-defined functions may use these fields in other
+         ways.  In the same vein, do not assume that these fields denote
+         contemporary objects in the current database.
         </para>
        </note>
 
@@ -7116,7 +7122,9 @@ ldap://ldap.acme.com/cn=dbserver,cn=hosts?pgconnectinfo?base?(objectclass=*)
    To allow server certificate verification, the certificate(s) of one or more
    trusted <acronym>CA</>s must be
    placed in the file <filename>~/.postgresql/root.crt</> in the user's home
-   directory. (On Microsoft Windows the file is named
+   directory. If intermediate <acronym>CA</>s appear in
+   <filename>root.crt</filename>, the file must also contain certificate
+   chains to their root <acronym>CA</>s. (On Microsoft Windows the file is named
    <filename>%APPDATA%\postgresql\root.crt</filename>.)
   </para>
 
@@ -7174,15 +7182,15 @@ ldap://ldap.acme.com/cn=dbserver,cn=hosts?pgconnectinfo?base?(objectclass=*)
    <quote>intermediate</> certificate authority, rather than one that is
    directly trusted by the server.  To use such a certificate, append the
    certificate of the signing authority to the <filename>postgresql.crt</>
-   file, then its parent authority's certificate, and so on up to a
-   <quote>root</> authority that is trusted by the server.  The root
-   certificate should be included in every case where
-   <filename>postgresql.crt</> contains more than one certificate.
+   file, then its parent authority's certificate, and so on up to a certificate
+   authority, <quote>root</> or <quote>intermediate</>, that is trusted by
+   the server, i.e. signed by a certificate in the server's
+   <filename>root.crt</filename> file.
   </para>
 
   <para>
-   Note that <filename>root.crt</filename> lists the top-level CAs that are
-   considered trusted for signing server certificates.  In principle it need
+   Note that the client's <filename>~/.postgresql/root.crt</> lists the top-level CAs 
+   that are considered trusted for signing server certificates.  In principle it need
    not list the CA that signed the client's certificate, though in most cases
    that CA would also be trusted for server certificates.
   </para>
@@ -7901,12 +7909,17 @@ main(int argc, char **argv)
  *
  *   INSERT INTO TBL1 VALUES (10);
  */
+
+#ifdef WIN32
+#include <windows.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/time.h>
-#include <libpq-fe.h>
+#include <sys/types.h>
+#include "libpq-fe.h"
 
 static void
 exit_nicely(PGconn *conn)
@@ -8040,11 +8053,17 @@ main(int argc, char **argv)
  *  t = (8 bytes) 'ho there'
  *  b = (5 bytes) \004\003\002\001\000
  */
+
+#ifdef WIN32
+#include <windows.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
-#include <libpq-fe.h>
+#include "libpq-fe.h"
 
 /* for ntohl/htonl */
 #include <netinet/in.h>
@@ -8155,10 +8174,10 @@ main(int argc, char **argv)
      * out-of-line parameters, as well as binary transmission of data.
      *
      * This first example transmits the parameters as text, but receives the
-     * results in binary format.  By using out-of-line parameters we can
-     * avoid a lot of tedious mucking about with quoting and escaping, even
-     * though the data is text.  Notice how we don't have to do anything
-     * special with the quote mark in the parameter value.
+     * results in binary format.  By using out-of-line parameters we can avoid
+     * a lot of tedious mucking about with quoting and escaping, even though
+     * the data is text.  Notice how we don't have to do anything special with
+     * the quote mark in the parameter value.
      */
 
     /* Here is our out-of-line parameter value */
@@ -8185,8 +8204,8 @@ main(int argc, char **argv)
     PQclear(res);
 
     /*
-     * In this second example we transmit an integer parameter in binary
-     * form, and again retrieve the results in binary form.
+     * In this second example we transmit an integer parameter in binary form,
+     * and again retrieve the results in binary form.
      *
      * Although we tell PQexecParams we are letting the backend deduce
      * parameter type, we really force the decision by casting the parameter

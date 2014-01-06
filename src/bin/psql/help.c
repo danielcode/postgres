@@ -8,9 +8,6 @@
 #include "postgres_fe.h"
 
 #ifndef WIN32
-#ifdef HAVE_PWD_H
-#include <pwd.h>				/* for getpwuid() */
-#endif
 #include <sys/types.h>			/* (ditto) */
 #include <unistd.h>				/* for geteuid() */
 #else
@@ -52,31 +49,18 @@ usage(void)
 {
 	const char *env;
 	const char *user;
-
-#ifndef WIN32
-	struct passwd *pw = NULL;
-#endif
+	char	   *errstr;
 
 	/* Find default user, in case we need it. */
 	user = getenv("PGUSER");
 	if (!user)
 	{
-#if !defined(WIN32) && !defined(__OS2__)
-		pw = getpwuid(geteuid());
-		if (pw)
-			user = pw->pw_name;
-		else
+		user = get_user_name(&errstr);
+		if (!user)
 		{
-			psql_error("could not get current user name: %s\n", strerror(errno));
+			psql_error("%s\n", errstr);
 			exit(EXIT_FAILURE);
 		}
-#else							/* WIN32 */
-		char		buf[128];
-		DWORD		bufsize = sizeof(buf) - 1;
-
-		if (GetUserName(buf, &bufsize))
-			user = buf;
-#endif   /* WIN32 */
 	}
 
 	printf(_("psql is the PostgreSQL interactive terminal.\n\n"));
@@ -247,7 +231,7 @@ slashUsage(unsigned short int pager)
 	fprintf(output, _("  \\f [STRING]            show or set field separator for unaligned query output\n"));
 	fprintf(output, _("  \\H                     toggle HTML output mode (currently %s)\n"),
 			ON(pset.popt.topt.format == PRINT_HTML));
-	fprintf(output, _("  \\pset NAME [VALUE]     set table output option\n"
+	fprintf(output, _("  \\pset [NAME [VALUE]]     set table output option\n"
 					  "                         (NAME := {format|border|expanded|fieldsep|fieldsep_zero|footer|null|\n"
 					  "                         numericlocale|recordsep|recordsep_zero|tuples_only|title|tableattr|pager})\n"));
 	fprintf(output, _("  \\t [on|off]            show only rows (currently %s)\n"),

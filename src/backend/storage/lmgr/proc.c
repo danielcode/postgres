@@ -140,10 +140,8 @@ ProcGlobalSemas(void)
  *	  running out when trying to start another backend is a common failure.
  *	  So, now we grab enough semaphores to support the desired max number
  *	  of backends immediately at initialization --- if the sysadmin has set
- *	  MaxConnections or autovacuum_max_workers higher than his kernel will
- *	  support, he'll find out sooner rather than later.  (The number of
- *	  background worker processes registered by loadable modules is also taken
- *	  into consideration.)
+ *	  MaxConnections, max_worker_processes, or autovacuum_max_workers higher
+ *	  than his kernel will support, he'll find out sooner rather than later.
  *
  *	  Another reason for creating semaphores here is that the semaphore
  *	  implementation typically requires us to create semaphores in the
@@ -999,8 +997,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 					LockCheckConflicts(lockMethodTable,
 									   lockmode,
 									   lock,
-									   proclock,
-									   MyProc) == STATUS_OK)
+									   proclock) == STATUS_OK)
 				{
 					/* Skip the wait and just grant myself the lock. */
 					GrantLock(lock, proclock, lockmode);
@@ -1269,7 +1266,10 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 	} while (myWaitStatus == STATUS_WAITING);
 
 	/*
-	 * Disable the timers, if they are still running
+	 * Disable the timers, if they are still running.  As in LockErrorCleanup,
+	 * we must preserve the LOCK_TIMEOUT indicator flag: if a lock timeout has
+	 * already caused QueryCancelPending to become set, we want the cancel to
+	 * be reported as a lock timeout, not a user cancel.
 	 */
 	if (LockTimeout > 0)
 	{
@@ -1278,7 +1278,7 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 		timeouts[0].id = DEADLOCK_TIMEOUT;
 		timeouts[0].keep_indicator = false;
 		timeouts[1].id = LOCK_TIMEOUT;
-		timeouts[1].keep_indicator = false;
+		timeouts[1].keep_indicator = true;
 		disable_timeouts(timeouts, 2);
 	}
 	else
@@ -1386,8 +1386,7 @@ ProcLockWakeup(LockMethod lockMethodTable, LOCK *lock)
 			LockCheckConflicts(lockMethodTable,
 							   lockmode,
 							   lock,
-							   proc->waitProcLock,
-							   proc) == STATUS_OK)
+							   proc->waitProcLock) == STATUS_OK)
 		{
 			/* OK to waken */
 			GrantLock(lock, proc->waitProcLock, lockmode);

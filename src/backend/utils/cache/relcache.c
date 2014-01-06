@@ -265,8 +265,10 @@ static void unlink_initfile(const char *initfilename);
  *		This is used by RelationBuildDesc to find a pg_class
  *		tuple matching targetRelId.  The caller must hold at least
  *		AccessShareLock on the target relid to prevent concurrent-update
- *		scenarios --- else our SnapshotNow scan might fail to find any
- *		version that it thinks is live.
+ *		scenarios; it isn't guaranteed that all scans used to build the
+ *		relcache entry will use the same snapshot.  If, for example,
+ *		an attribute were to be added after scanning pg_class and before
+ *		scanning pg_attribute, relnatts wouldn't match.
  *
  *		NB: the returned tuple has been copied into palloc'd storage
  *		and must eventually be freed with heap_freetuple.
@@ -305,7 +307,7 @@ ScanPgRelation(Oid targetRelId, bool indexOK)
 	pg_class_desc = heap_open(RelationRelationId, AccessShareLock);
 	pg_class_scan = systable_beginscan(pg_class_desc, ClassOidIndexId,
 									   indexOK && criticalRelcachesBuilt,
-									   SnapshotNow,
+									   NULL,
 									   1, key);
 
 	pg_class_tuple = systable_getnext(pg_class_scan);
@@ -480,7 +482,7 @@ RelationBuildTupleDesc(Relation relation)
 	pg_attribute_scan = systable_beginscan(pg_attribute_desc,
 										   AttributeRelidNumIndexId,
 										   criticalRelcachesBuilt,
-										   SnapshotNow,
+										   NULL,
 										   2, skey);
 
 	/*
@@ -663,7 +665,7 @@ RelationBuildRuleLock(Relation relation)
 	rewrite_tupdesc = RelationGetDescr(rewrite_desc);
 	rewrite_scan = systable_beginscan(rewrite_desc,
 									  RewriteRelRulenameIndexId,
-									  true, SnapshotNow,
+									  true, NULL,
 									  1, &key);
 
 	while (HeapTupleIsValid(rewrite_tuple = systable_getnext(rewrite_scan)))
@@ -680,7 +682,6 @@ RelationBuildRuleLock(Relation relation)
 		rule->ruleId = HeapTupleGetOid(rewrite_tuple);
 
 		rule->event = rewrite_form->ev_type - '0';
-		rule->attrno = rewrite_form->ev_attr;
 		rule->enabled = rewrite_form->ev_enabled;
 		rule->isInstead = rewrite_form->is_instead;
 
@@ -795,8 +796,6 @@ equalRuleLocks(RuleLock *rlock1, RuleLock *rlock2)
 			if (rule1->ruleId != rule2->ruleId)
 				return false;
 			if (rule1->event != rule2->event)
-				return false;
-			if (rule1->attrno != rule2->attrno)
 				return false;
 			if (rule1->enabled != rule2->enabled)
 				return false;
@@ -1313,7 +1312,7 @@ LookupOpclassInfo(Oid operatorClassOid,
 				ObjectIdGetDatum(operatorClassOid));
 	rel = heap_open(OperatorClassRelationId, AccessShareLock);
 	scan = systable_beginscan(rel, OpclassOidIndexId, indexOK,
-							  SnapshotNow, 1, skey);
+							  NULL, 1, skey);
 
 	if (HeapTupleIsValid(htup = systable_getnext(scan)))
 	{
@@ -1348,7 +1347,7 @@ LookupOpclassInfo(Oid operatorClassOid,
 					ObjectIdGetDatum(opcentry->opcintype));
 		rel = heap_open(AccessMethodProcedureRelationId, AccessShareLock);
 		scan = systable_beginscan(rel, AccessMethodProcedureIndexId, indexOK,
-								  SnapshotNow, 3, skey);
+								  NULL, 3, skey);
 
 		while (HeapTupleIsValid(htup = systable_getnext(scan)))
 		{
@@ -1455,6 +1454,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	/* ... and they're always populated, too */
 	relation->rd_rel->relispopulated = true;
 
+	relation->rd_rel->relreplident = REPLICA_IDENTITY_NOTHING;
 	relation->rd_rel->relpages = 0;
 	relation->rd_rel->reltuples = 0;
 	relation->rd_rel->relallvisible = 0;
@@ -2665,6 +2665,13 @@ RelationBuildLocalRelation(const char *relname,
 	else
 		rel->rd_rel->relispopulated = true;
 
+	/* system relations and non-table objects don't have one */
+	if (!IsSystemNamespace(relnamespace) &&
+		(relkind == RELKIND_RELATION || relkind == RELKIND_MATVIEW))
+		rel->rd_rel->relreplident = REPLICA_IDENTITY_DEFAULT;
+	else
+		rel->rd_rel->relreplident = REPLICA_IDENTITY_NOTHING;
+
 	/*
 	 * Insert relation physical and logical identifiers (OIDs) into the right
 	 * places.	For a mapped relation, we set relfilenode to zero and rely on
@@ -3317,7 +3324,7 @@ AttrDefaultFetch(Relation relation)
 
 	adrel = heap_open(AttrDefaultRelationId, AccessShareLock);
 	adscan = systable_beginscan(adrel, AttrDefaultIndexId, true,
-								SnapshotNow, 1, &skey);
+								NULL, 1, &skey);
 	found = 0;
 
 	while (HeapTupleIsValid(htup = systable_getnext(adscan)))
@@ -3384,7 +3391,7 @@ CheckConstraintFetch(Relation relation)
 
 	conrel = heap_open(ConstraintRelationId, AccessShareLock);
 	conscan = systable_beginscan(conrel, ConstraintRelidIndexId, true,
-								 SnapshotNow, 1, skey);
+								 NULL, 1, skey);
 
 	while (HeapTupleIsValid(htup = systable_getnext(conscan)))
 	{
@@ -3463,7 +3470,10 @@ RelationGetIndexList(Relation relation)
 	ScanKeyData skey;
 	HeapTuple	htup;
 	List	   *result;
-	Oid			oidIndex;
+	char		replident = relation->rd_rel->relreplident;
+	Oid			oidIndex = InvalidOid;
+	Oid			pkeyIndex = InvalidOid;
+	Oid			candidateIndex = InvalidOid;
 	MemoryContext oldcxt;
 
 	/* Quick exit if we already computed the list. */
@@ -3487,7 +3497,7 @@ RelationGetIndexList(Relation relation)
 
 	indrel = heap_open(IndexRelationId, AccessShareLock);
 	indscan = systable_beginscan(indrel, IndexIndrelidIndexId, true,
-								 SnapshotNow, 1, &skey);
+								 NULL, 1, &skey);
 
 	while (HeapTupleIsValid(htup = systable_getnext(indscan)))
 	{
@@ -3520,17 +3530,45 @@ RelationGetIndexList(Relation relation)
 		Assert(!isnull);
 		indclass = (oidvector *) DatumGetPointer(indclassDatum);
 
-		/* Check to see if it is a unique, non-partial btree index on OID */
-		if (IndexIsValid(index) &&
-			index->indnatts == 1 &&
-			index->indisunique && index->indimmediate &&
+		/*
+		 * Invalid, non-unique, non-immediate or predicate indexes aren't
+		 * interesting for neither oid indexes nor replication identity
+		 * indexes, so don't check them.
+		 */
+		if (!IndexIsValid(index) || !index->indisunique ||
+			!index->indimmediate ||
+			!heap_attisnull(htup, Anum_pg_index_indpred))
+			continue;
+
+		/* Check to see if is a usable btree index on OID */
+		if (index->indnatts == 1 &&
 			index->indkey.values[0] == ObjectIdAttributeNumber &&
-			indclass->values[0] == OID_BTREE_OPS_OID &&
-			heap_attisnull(htup, Anum_pg_index_indpred))
+			indclass->values[0] == OID_BTREE_OPS_OID)
 			oidIndex = index->indexrelid;
+
+		/* always prefer primary keys */
+		if (index->indisprimary)
+			pkeyIndex = index->indexrelid;
+
+		/* explicitly chosen index */
+		if (index->indisreplident)
+			candidateIndex = index->indexrelid;
 	}
 
 	systable_endscan(indscan);
+
+	/* primary key */
+	if (replident == REPLICA_IDENTITY_DEFAULT &&
+		OidIsValid(pkeyIndex))
+		relation->rd_replidindex = pkeyIndex;
+	/* explicitly chosen index */
+	else if (replident == REPLICA_IDENTITY_INDEX &&
+			 OidIsValid(candidateIndex))
+		relation->rd_replidindex = candidateIndex;
+	/* nothing */
+	else
+		relation->rd_replidindex = InvalidOid;
+
 	heap_close(indrel, AccessShareLock);
 
 	/* Now save a copy of the completed list in the relcache entry. */
@@ -3780,8 +3818,9 @@ RelationGetIndexPredicate(Relation relation)
  * simple index keys, but attributes used in expressions and partial-index
  * predicates.)
  *
- * If "keyAttrs" is true, only attributes that can be referenced by foreign
- * keys are considered.
+ * Depending on attrKind, a bitmap covering the attnums for all index columns,
+ * for all key columns or for all the columns the configured replica identity
+ * are returned.
  *
  * Attribute numbers are offset by FirstLowInvalidHeapAttributeNumber so that
  * we can include system attributes (e.g., OID) in the bitmap representation.
@@ -3794,17 +3833,28 @@ RelationGetIndexPredicate(Relation relation)
  * be bms_free'd when not needed anymore.
  */
 Bitmapset *
-RelationGetIndexAttrBitmap(Relation relation, bool keyAttrs)
+RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 {
-	Bitmapset  *indexattrs;
-	Bitmapset  *uindexattrs;
+	Bitmapset  *indexattrs; /* indexed columns */
+	Bitmapset  *uindexattrs; /* columns in unique indexes */
+	Bitmapset  *idindexattrs; /* columns in the replica identity */
 	List	   *indexoidlist;
 	ListCell   *l;
 	MemoryContext oldcxt;
 
 	/* Quick exit if we already computed the result. */
 	if (relation->rd_indexattr != NULL)
-		return bms_copy(keyAttrs ? relation->rd_keyattr : relation->rd_indexattr);
+		switch(attrKind)
+		{
+			case INDEX_ATTR_BITMAP_IDENTITY_KEY:
+				return bms_copy(relation->rd_idattr);
+			case INDEX_ATTR_BITMAP_KEY:
+				return bms_copy(relation->rd_keyattr);
+			case INDEX_ATTR_BITMAP_ALL:
+				return bms_copy(relation->rd_indexattr);
+			default:
+				elog(ERROR, "unknown attrKind %u", attrKind);
+		}
 
 	/* Fast path if definitely no indexes */
 	if (!RelationGetForm(relation)->relhasindex)
@@ -3831,13 +3881,16 @@ RelationGetIndexAttrBitmap(Relation relation, bool keyAttrs)
 	 */
 	indexattrs = NULL;
 	uindexattrs = NULL;
+	idindexattrs = NULL;
 	foreach(l, indexoidlist)
 	{
 		Oid			indexOid = lfirst_oid(l);
 		Relation	indexDesc;
 		IndexInfo  *indexInfo;
 		int			i;
-		bool		isKey;
+		bool		isKey; /* candidate key */
+		bool		isIDKey; /* replica identity index */
+
 
 		indexDesc = index_open(indexOid, AccessShareLock);
 
@@ -3849,6 +3902,9 @@ RelationGetIndexAttrBitmap(Relation relation, bool keyAttrs)
 			indexInfo->ii_Expressions == NIL &&
 			indexInfo->ii_Predicate == NIL;
 
+		/* Is this index the configured (or default) replica identity? */
+		isIDKey = indexOid == relation->rd_replidindex;
+
 		/* Collect simple attribute references */
 		for (i = 0; i < indexInfo->ii_NumIndexAttrs; i++)
 		{
@@ -3858,6 +3914,11 @@ RelationGetIndexAttrBitmap(Relation relation, bool keyAttrs)
 			{
 				indexattrs = bms_add_member(indexattrs,
 							   attrnum - FirstLowInvalidHeapAttributeNumber);
+
+				if (isIDKey)
+					idindexattrs = bms_add_member(idindexattrs,
+												 attrnum - FirstLowInvalidHeapAttributeNumber);
+
 				if (isKey)
 					uindexattrs = bms_add_member(uindexattrs,
 							   attrnum - FirstLowInvalidHeapAttributeNumber);
@@ -3879,10 +3940,21 @@ RelationGetIndexAttrBitmap(Relation relation, bool keyAttrs)
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 	relation->rd_indexattr = bms_copy(indexattrs);
 	relation->rd_keyattr = bms_copy(uindexattrs);
+	relation->rd_idattr = bms_copy(idindexattrs);
 	MemoryContextSwitchTo(oldcxt);
 
 	/* We return our original working copy for caller to play with */
-	return keyAttrs ? uindexattrs : indexattrs;
+	switch(attrKind)
+	{
+		case INDEX_ATTR_BITMAP_IDENTITY_KEY:
+			return idindexattrs;
+		case INDEX_ATTR_BITMAP_KEY:
+			return uindexattrs;
+		case INDEX_ATTR_BITMAP_ALL:
+			return indexattrs;
+		default:
+			elog(ERROR, "unknown attrKind %u", attrKind);
+	}
 }
 
 /*
@@ -3938,7 +4010,7 @@ RelationGetExclusionInfo(Relation indexRelation,
 
 	conrel = heap_open(ConstraintRelationId, AccessShareLock);
 	conscan = systable_beginscan(conrel, ConstraintRelidIndexId, true,
-								 SnapshotNow, 1, skey);
+								 NULL, 1, skey);
 	found = false;
 
 	while (HeapTupleIsValid(htup = systable_getnext(conscan)))

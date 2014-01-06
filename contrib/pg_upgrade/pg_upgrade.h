@@ -443,14 +443,17 @@ void		check_pghost_envvar(void);
 /* util.c */
 
 char	   *quote_identifier(const char *s);
-int			get_user_info(char **user_name);
+int			get_user_info(char **user_name_p);
 void		check_ok(void);
 void
 report_status(eLogType type, const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
 void
-pg_log(eLogType type, char *fmt,...)
+pg_log(eLogType type, const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
+void
+pg_fatal(const char *fmt,...)
+__attribute__((format(PG_PRINTF_ATTRIBUTE, 1, 2),noreturn));
 void		end_progress_output(void);
 void
 prep_status(const char *fmt,...)

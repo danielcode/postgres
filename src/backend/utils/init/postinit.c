@@ -111,7 +111,7 @@ GetDatabaseTuple(const char *dbname)
 	relation = heap_open(DatabaseRelationId, AccessShareLock);
 	scan = systable_beginscan(relation, DatabaseNameIndexId,
 							  criticalSharedRelcachesBuilt,
-							  SnapshotNow,
+							  NULL,
 							  1, key);
 
 	tuple = systable_getnext(scan);
@@ -154,7 +154,7 @@ GetDatabaseTupleByOid(Oid dboid)
 	relation = heap_open(DatabaseRelationId, AccessShareLock);
 	scan = systable_beginscan(relation, DatabaseOidIndexId,
 							  criticalSharedRelcachesBuilt,
-							  SnapshotNow,
+							  NULL,
 							  1, key);
 
 	tuple = systable_getnext(scan);
@@ -436,7 +436,7 @@ InitializeMaxBackends(void)
 
 	/* the extra unit accounts for the autovacuum launcher */
 	MaxBackends = MaxConnections + autovacuum_max_workers + 1 +
-		GetNumShmemAttachedBgworkers();
+		+ max_worker_processes;
 
 	/* internal error because the values were all checked previously */
 	if (MaxBackends > MAX_BACKENDS)
@@ -587,15 +587,14 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	RelationCacheInitializePhase2();
 
 	/*
-	 * Set up process-exit callback to do pre-shutdown cleanup.  This has to
-	 * be after we've initialized all the low-level modules like the buffer
-	 * manager, because during shutdown this has to run before the low-level
-	 * modules start to close down.  On the other hand, we want it in place
-	 * before we begin our first transaction --- if we fail during the
-	 * initialization transaction, as is entirely possible, we need the
-	 * AbortTransaction call to clean up.
+	 * Set up process-exit callback to do pre-shutdown cleanup.  This is the
+	 * first before_shmem_exit callback we register; thus, this will be the
+	 * last thing we do before low-level modules like the buffer manager begin
+	 * to close down.  We need to have this in place before we begin our first
+	 * transaction --- if we fail during the initialization transaction, as is
+	 * entirely possible, we need the AbortTransaction call to clean up.
 	 */
-	on_shmem_exit(ShutdownPostgres, 0);
+	before_shmem_exit(ShutdownPostgres, 0);
 
 	/* The autovacuum launcher is done here */
 	if (IsAutoVacuumLauncherProcess())
@@ -997,18 +996,23 @@ static void
 process_settings(Oid databaseid, Oid roleid)
 {
 	Relation	relsetting;
+	Snapshot	snapshot;
 
 	if (!IsUnderPostmaster)
 		return;
 
 	relsetting = heap_open(DbRoleSettingRelationId, AccessShareLock);
 
-	/* Later settings are ignored if set earlier. */
-	ApplySetting(databaseid, roleid, relsetting, PGC_S_DATABASE_USER);
-	ApplySetting(InvalidOid, roleid, relsetting, PGC_S_USER);
-	ApplySetting(databaseid, InvalidOid, relsetting, PGC_S_DATABASE);
-	ApplySetting(InvalidOid, InvalidOid, relsetting, PGC_S_GLOBAL);
+	/* read all the settings under the same snapsot for efficiency */
+	snapshot = RegisterSnapshot(GetCatalogSnapshot(DbRoleSettingRelationId));
 
+	/* Later settings are ignored if set earlier. */
+	ApplySetting(snapshot, databaseid, roleid, relsetting, PGC_S_DATABASE_USER);
+	ApplySetting(snapshot, InvalidOid, roleid, relsetting, PGC_S_USER);
+	ApplySetting(snapshot, databaseid, InvalidOid, relsetting, PGC_S_DATABASE);
+	ApplySetting(snapshot, InvalidOid, InvalidOid, relsetting, PGC_S_GLOBAL);
+
+	UnregisterSnapshot(snapshot);
 	heap_close(relsetting, AccessShareLock);
 }
 
@@ -1078,7 +1082,7 @@ ThereIsAtLeastOneRole(void)
 
 	pg_authid_rel = heap_open(AuthIdRelationId, AccessShareLock);
 
-	scan = heap_beginscan(pg_authid_rel, SnapshotNow, 0, NULL);
+	scan = heap_beginscan_catalog(pg_authid_rel, 0, NULL);
 	result = (heap_getnext(scan, ForwardScanDirection) != NULL);
 
 	heap_endscan(scan);

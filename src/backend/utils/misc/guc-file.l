@@ -120,6 +120,9 @@ ProcessConfigFile(GucContext context)
 				   *head,
 				   *tail;
 	int			i;
+	char		ConfigAutoFileName[MAXPGPATH];
+	char		*ErrorConfFile;
+	char		*CallingFileName;
 
 	/*
 	 * Config files are processed on startup (by the postmaster only)
@@ -134,6 +137,8 @@ ProcessConfigFile(GucContext context)
 	 */
 	elevel = IsUnderPostmaster ? DEBUG2 : LOG;
 
+	ErrorConfFile = ConfigFileName;
+
 	/* Parse the file into a list of option names and values */
 	head = tail = NULL;
 
@@ -141,6 +146,26 @@ ProcessConfigFile(GucContext context)
 	{
 		/* Syntax error(s) detected in the file, so bail out */
 		error = true;
+		goto cleanup_list;
+	}
+
+	/*
+	 * Parse postgresql.auto.conf file after postgresql.conf to replace
+	 * parameters set by ALTER SYSTEM command. This file is present in
+	 * data directory, however when called during initdb data directory is not
+	 * set till this point, so use ConfigFile path which will be same.
+	 */
+	snprintf(ConfigAutoFileName,sizeof(ConfigAutoFileName),"%s", PG_AUTOCONF_FILENAME);
+	if (data_directory)
+		CallingFileName = NULL;
+	else
+		CallingFileName = ConfigFileName;
+
+	if (!ParseConfigFile(ConfigAutoFileName, CallingFileName, false, 0, elevel, &head, &tail))
+	{
+		/* Syntax error(s) detected in the file, so bail out */
+		error = true;
+		ErrorConfFile = ConfigAutoFileName;
 		goto cleanup_list;
 	}
 
@@ -192,6 +217,7 @@ ProcessConfigFile(GucContext context)
 							item->name,
 							item->filename, item->sourceline)));
 			error = true;
+			ErrorConfFile = item->filename;
 		}
 	}
 
@@ -318,7 +344,10 @@ ProcessConfigFile(GucContext context)
 			}
 		}
 		else if (scres == 0)
+		{
 			error = true;
+			ErrorConfFile = item->filename;
+		}
 		/* else no error but variable's active value was not changed */
 
 		/*
@@ -348,17 +377,17 @@ ProcessConfigFile(GucContext context)
 			ereport(ERROR,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("configuration file \"%s\" contains errors",
-							ConfigFileName)));
+							ErrorConfFile)));
 		else if (apply)
 			ereport(elevel,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("configuration file \"%s\" contains errors; unaffected changes were applied",
-							ConfigFileName)));
+							ErrorConfFile)));
 		else
 			ereport(elevel,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),
 					 errmsg("configuration file \"%s\" contains errors; no changes were applied",
-							ConfigFileName)));
+							ErrorConfFile)));
 	}
 }
 
@@ -409,6 +438,7 @@ ParseConfigFile(const char *config_file, const char *calling_file, bool strict,
 				ConfigVariable **head_p,
 				ConfigVariable **tail_p)
 {
+	char	   *abs_path;
 	bool		OK = true;
 	FILE	   *fp;
 
@@ -426,8 +456,8 @@ ParseConfigFile(const char *config_file, const char *calling_file, bool strict,
 		return false;
 	}
 
-	config_file = AbsoluteConfigLocation(config_file,calling_file);
-	fp = AllocateFile(config_file, "r");
+	abs_path = AbsoluteConfigLocation(config_file, calling_file);
+	fp = AllocateFile(abs_path, "r");
 	if (!fp)
 	{
 		if (strict)
@@ -435,19 +465,20 @@ ParseConfigFile(const char *config_file, const char *calling_file, bool strict,
 			ereport(elevel,
 					(errcode_for_file_access(),
 					 errmsg("could not open configuration file \"%s\": %m",
-							config_file)));
+							abs_path)));
 			return false;
 		}
 
 		ereport(LOG,
 				(errmsg("skipping missing configuration file \"%s\"",
-						config_file)));
+						abs_path)));
 		return OK;
 	}
 
-	OK = ParseConfigFp(fp, config_file, depth, elevel, head_p, tail_p);
+	OK = ParseConfigFp(fp, abs_path, depth, elevel, head_p, tail_p);
 
 	FreeFile(fp);
+	pfree(abs_path);
 
 	return OK;
 }
@@ -596,9 +627,9 @@ ParseConfigFp(FILE *fp, const char *config_file, int depth, int elevel,
 								 depth + 1, elevel,
 								 head_p, tail_p))
 				OK = false;
-				yy_switch_to_buffer(lex_buffer);
-				pfree(opt_name);
-				pfree(opt_value);
+			yy_switch_to_buffer(lex_buffer);
+			pfree(opt_name);
+			pfree(opt_value);
 		}
 		else if (guc_name_compare(opt_name, "include") == 0)
 		{

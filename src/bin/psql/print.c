@@ -1171,7 +1171,7 @@ print_aligned_vertical(const printTableContent *cont, FILE *fout)
 	if (cont->cells[0] == NULL && cont->opt->start_table &&
 		cont->opt->stop_table)
 	{
-		if (!opt_tuples_only)
+		if (!opt_tuples_only && cont->opt->default_footer)
 			fprintf(fout, _("(No rows)\n"));
 		return;
 	}
@@ -2595,6 +2595,10 @@ printQuery(const PGresult *result, const printQueryOpt *opt, FILE *fout, FILE *f
 
 	printTableInit(&cont, &opt->topt, opt->title,
 				   PQnfields(result), PQntuples(result));
+
+	/* Assert caller supplied enough translate_columns[] entries */
+	Assert(opt->translate_columns == NULL ||
+		   opt->n_translate_columns >= cont.ncolumns);
 
 	for (i = 0; i < cont.ncolumns; i++)
 	{

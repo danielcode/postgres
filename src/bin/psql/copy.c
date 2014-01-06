@@ -79,9 +79,7 @@ xstrcat(char **var, const char *more)
 {
 	char	   *newvar;
 
-	newvar = pg_malloc(strlen(*var) + strlen(more) + 1);
-	strcpy(newvar, *var);
-	strcat(newvar, more);
+	newvar = psprintf("%s%s", *var, more);
 	free(*var);
 	*var = newvar;
 }
@@ -196,7 +194,7 @@ parse_slash_copy(const char *args)
 		goto error;
 
 	/* { 'filename' | PROGRAM 'command' | STDIN | STDOUT | PSTDIN | PSTDOUT } */
-	token = strtokx(NULL, whitespace, NULL, "'",
+	token = strtokx(NULL, whitespace, ";", "'",
 					0, false, false, pset.encoding);
 	if (!token)
 		goto error;
@@ -205,7 +203,7 @@ parse_slash_copy(const char *args)
 	{
 		int			toklen;
 
-		token = strtokx(NULL, whitespace, NULL, "'",
+		token = strtokx(NULL, whitespace, ";", "'",
 						0, false, false, pset.encoding);
 		if (!token)
 			goto error;
@@ -364,9 +362,9 @@ do_copy(const char *args)
 	printfPQExpBuffer(&query, "COPY ");
 	appendPQExpBufferStr(&query, options->before_tofrom);
 	if (options->from)
-		appendPQExpBuffer(&query, " FROM STDIN ");
+		appendPQExpBufferStr(&query, " FROM STDIN ");
 	else
-		appendPQExpBuffer(&query, " TO STDOUT ");
+		appendPQExpBufferStr(&query, " TO STDOUT ");
 	if (options->after_tofrom)
 		appendPQExpBufferStr(&query, options->after_tofrom);
 
@@ -635,6 +633,11 @@ handleCopyIn(PGconn *conn, FILE *copystream, bool isbinary)
 				/* check for EOF marker, but not on a partial line */
 				if (firstload)
 				{
+					/*
+					 * This code erroneously assumes '\.' on a line alone
+					 * inside a quoted CSV string terminates the \copy.
+					 * http://www.postgresql.org/message-id/E1TdNVQ-0001ju-GO@wrigleys.postgresql.org
+					 */
 					if (strcmp(buf, "\\.\n") == 0 ||
 						strcmp(buf, "\\.\r\n") == 0)
 					{

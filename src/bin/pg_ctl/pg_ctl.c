@@ -18,7 +18,9 @@
 #endif
 
 #include "postgres_fe.h"
+
 #include "libpq-fe.h"
+#include "pqexpbuffer.h"
 
 #include <fcntl.h>
 #include <locale.h>
@@ -1099,12 +1101,11 @@ do_promote(void)
 	}
 
 	/*
-	 * For 9.3 onwards, use fast promotion as the default option. Promotion
+	 * For 9.3 onwards, "fast" promotion is performed. Promotion
 	 * with a full checkpoint is still possible by writing a file called
-	 * "promote", e.g. snprintf(promote_file, MAXPGPATH, "%s/promote",
-	 * pg_data);
+	 * "fallback_promote" instead of "promote"
 	 */
-	snprintf(promote_file, MAXPGPATH, "%s/fast_promote", pg_data);
+	snprintf(promote_file, MAXPGPATH, "%s/promote", pg_data);
 
 	if ((prmfile = fopen(promote_file, "w")) == NULL)
 	{
@@ -1205,8 +1206,7 @@ do_status(void)
 	/*
 	 * The Linux Standard Base Core Specification 3.1 says this should return
 	 * '3'
-	 * http://refspecs.freestandards.org/LSB_3.1.1/LSB-Core-generic/LSB-Core-ge
-	 * neric/iniscrptact.html
+	 * https://refspecs.linuxbase.org/LSB_3.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptact.html
 	 */
 	exit(3);
 }
@@ -1240,16 +1240,13 @@ pgwin32_IsInstalled(SC_HANDLE hSCM)
 static char *
 pgwin32_CommandLine(bool registration)
 {
-	static char cmdLine[MAXPGPATH];
+	PQExpBuffer cmdLine = createPQExpBuffer();
+	char		cmdPath[MAXPGPATH];
 	int			ret;
-
-#ifdef __CYGWIN__
-	char		buf[MAXPGPATH];
-#endif
 
 	if (registration)
 	{
-		ret = find_my_exec(argv0, cmdLine);
+		ret = find_my_exec(argv0, cmdPath);
 		if (ret != 0)
 		{
 			write_stderr(_("%s: could not find own program executable\n"), progname);
@@ -1259,7 +1256,7 @@ pgwin32_CommandLine(bool registration)
 	else
 	{
 		ret = find_other_exec(argv0, "postgres", PG_BACKEND_VERSIONSTR,
-							  cmdLine);
+							  cmdPath);
 		if (ret != 0)
 		{
 			write_stderr(_("%s: could not find postgres program executable\n"), progname);
@@ -1269,54 +1266,57 @@ pgwin32_CommandLine(bool registration)
 
 #ifdef __CYGWIN__
 	/* need to convert to windows path */
+	{
+		char		buf[MAXPGPATH];
+
 #if CYGWIN_VERSION_DLL_MAJOR >= 1007
-	cygwin_conv_path(CCP_POSIX_TO_WIN_A, cmdLine, buf, sizeof(buf));
+		cygwin_conv_path(CCP_POSIX_TO_WIN_A, cmdPath, buf, sizeof(buf));
 #else
-	cygwin_conv_to_full_win32_path(cmdLine, buf);
+		cygwin_conv_to_full_win32_path(cmdPath, buf);
 #endif
-	strcpy(cmdLine, buf);
+		strcpy(cmdPath, buf);
+	}
 #endif
+
+	/* if path does not end in .exe, append it */
+	if (strlen(cmdPath) < 4 ||
+		pg_strcasecmp(cmdPath + strlen(cmdPath) - 4, ".exe") != 0)
+		snprintf(cmdPath + strlen(cmdPath), sizeof(cmdPath) - strlen(cmdPath),
+				 ".exe");
+
+	/* use backslashes in path to avoid problems with some third-party tools */
+	make_native_path(cmdPath);
+
+	/* be sure to double-quote the executable's name in the command */
+	appendPQExpBuffer(cmdLine, "\"%s\"", cmdPath);
+
+	/* append assorted switches to the command line, as needed */
 
 	if (registration)
-	{
-		if (pg_strcasecmp(cmdLine + strlen(cmdLine) - 4, ".exe") != 0)
-		{
-			/* If commandline does not end in .exe, append it */
-			strcat(cmdLine, ".exe");
-		}
-		strcat(cmdLine, " runservice -N \"");
-		strcat(cmdLine, register_servicename);
-		strcat(cmdLine, "\"");
-	}
+		appendPQExpBuffer(cmdLine, " runservice -N \"%s\"",
+						  register_servicename);
 
 	if (pg_config)
-	{
-		strcat(cmdLine, " -D \"");
-		strcat(cmdLine, pg_config);
-		strcat(cmdLine, "\"");
-	}
+		appendPQExpBuffer(cmdLine, " -D \"%s\"", pg_config);
 
 	if (registration && do_wait)
-		strcat(cmdLine, " -w");
+		appendPQExpBuffer(cmdLine, " -w");
 
 	if (registration && wait_seconds != DEFAULT_WAIT)
-		/* concatenate */
-		sprintf(cmdLine + strlen(cmdLine), " -t %d", wait_seconds);
+		appendPQExpBuffer(cmdLine, " -t %d", wait_seconds);
 
 	if (registration && silent_mode)
-		strcat(cmdLine, " -s");
+		appendPQExpBuffer(cmdLine, " -s");
 
 	if (post_opts)
 	{
-		strcat(cmdLine, " ");
 		if (registration)
-			strcat(cmdLine, " -o \"");
-		strcat(cmdLine, post_opts);
-		if (registration)
-			strcat(cmdLine, "\"");
+			appendPQExpBuffer(cmdLine, " -o \"%s\"", post_opts);
+		else
+			appendPQExpBuffer(cmdLine, " %s", post_opts);
 	}
 
-	return cmdLine;
+	return cmdLine->data;
 }
 
 static void
@@ -1747,7 +1747,7 @@ CreateRestrictedProcess(char *cmd, PROCESS_INFORMATION *processInfo, bool as_ser
 	 */
 	return r;
 }
-#endif
+#endif   /* defined(WIN32) || defined(__CYGWIN__) */
 
 static void
 do_advice(void)
@@ -2002,13 +2002,12 @@ main(int argc, char **argv)
 	/* support --help and --version even if invoked as root */
 	if (argc > 1)
 	{
-		if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0 ||
-			strcmp(argv[1], "-?") == 0)
+		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
 		{
 			do_help();
 			exit(0);
 		}
-		else if (strcmp(argv[1], "-V") == 0 || strcmp(argv[1], "--version") == 0)
+		else if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
 		{
 			puts("pg_ctl (PostgreSQL) " PG_VERSION);
 			exit(0);
@@ -2048,12 +2047,11 @@ main(int argc, char **argv)
 				case 'D':
 					{
 						char	   *pgdata_D;
-						char	   *env_var = pg_malloc(strlen(optarg) + 8);
+						char	   *env_var;
 
 						pgdata_D = pg_strdup(optarg);
 						canonicalize_path(pgdata_D);
-						snprintf(env_var, strlen(optarg) + 8, "PGDATA=%s",
-								 pgdata_D);
+						env_var = psprintf("PGDATA=%s", pgdata_D);
 						putenv(env_var);
 
 						/*
@@ -2061,10 +2059,7 @@ main(int argc, char **argv)
 						 * variable but we do -D too for clearer postmaster
 						 * 'ps' display
 						 */
-						pgdata_opt = pg_malloc(strlen(pgdata_D) + 7);
-						snprintf(pgdata_opt, strlen(pgdata_D) + 7,
-								 "-D \"%s\" ",
-								 pgdata_D);
+						pgdata_opt = psprintf("-D \"%s\" ", pgdata_D);
 						break;
 					}
 				case 'l':
@@ -2105,11 +2100,7 @@ main(int argc, char **argv)
 						register_username = pg_strdup(optarg);
 					else
 						/* Prepend .\ for local accounts */
-					{
-						register_username = pg_malloc(strlen(optarg) + 3);
-						strcpy(register_username, ".\\");
-						strcat(register_username, optarg);
-					}
+						register_username = psprintf(".\\%s", optarg);
 					break;
 				case 'w':
 					do_wait = true;

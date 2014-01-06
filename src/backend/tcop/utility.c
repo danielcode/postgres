@@ -110,7 +110,7 @@ CheckRelationOwnership(RangeVar *rel, bool noCatalogs)
 	if (noCatalogs)
 	{
 		if (!allowSystemTableMods &&
-			IsSystemClass((Form_pg_class) GETSTRUCT(tuple)))
+			IsSystemClass(relOid, (Form_pg_class) GETSTRUCT(tuple)))
 			ereport(ERROR,
 					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 					 errmsg("permission denied: \"%s\" is a system catalog",
@@ -687,8 +687,13 @@ standard_ProcessUtility(Node *parsetree,
 			ExplainQuery((ExplainStmt *) parsetree, queryString, params, dest);
 			break;
 
+		case T_AlterSystemStmt:
+			PreventTransactionChain(isTopLevel, "ALTER SYSTEM");
+			AlterSystemSetConfigFile((AlterSystemStmt *) parsetree);
+			break;
+
 		case T_VariableSetStmt:
-			ExecSetVariableStmt((VariableSetStmt *) parsetree);
+			ExecSetVariableStmt((VariableSetStmt *) parsetree, isTopLevel);
 			break;
 
 		case T_VariableShowStmt:
@@ -754,6 +759,7 @@ standard_ProcessUtility(Node *parsetree,
 			break;
 
 		case T_ConstraintsSetStmt:
+			WarnNoTransactionChain(isTopLevel, "SET CONSTRAINTS");
 			AfterTriggerSetState((ConstraintsSetStmt *) parsetree);
 			break;
 
@@ -1103,7 +1109,8 @@ ProcessUtilitySlow(Node *parsetree,
 					{
 						case OBJECT_AGGREGATE:
 							DefineAggregate(stmt->defnames, stmt->args,
-											stmt->oldstyle, stmt->definition);
+											stmt->oldstyle, stmt->definition,
+											queryString);
 							break;
 						case OBJECT_OPERATOR:
 							Assert(stmt->args == NIL);
@@ -2155,6 +2162,10 @@ CreateCommandTag(Node *parsetree)
 			tag = "REFRESH MATERIALIZED VIEW";
 			break;
 
+		case T_AlterSystemStmt:
+			tag = "ALTER SYSTEM";
+			break;
+
 		case T_VariableSetStmt:
 			switch (((VariableSetStmt *) parsetree)->kind)
 			{
@@ -2188,6 +2199,9 @@ CreateCommandTag(Node *parsetree)
 					break;
 				case DISCARD_TEMP:
 					tag = "DISCARD TEMP";
+					break;
+				case DISCARD_SEQUENCES:
+					tag = "DISCARD SEQUENCES";
 					break;
 				default:
 					tag = "???";
@@ -2719,6 +2733,10 @@ GetCommandLogLevel(Node *parsetree)
 
 		case T_RefreshMatViewStmt:
 			lev = LOGSTMT_DDL;
+			break;
+
+		case T_AlterSystemStmt:
+			lev = LOGSTMT_ALL;
 			break;
 
 		case T_VariableSetStmt:

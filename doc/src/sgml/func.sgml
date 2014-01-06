@@ -831,19 +831,6 @@
       <row>
        <entry>
         <indexterm>
-         <primary>random</primary>
-        </indexterm>
-        <literal><function>random()</function></literal>
-       </entry>
-       <entry><type>dp</type></entry>
-       <entry>random value in the range 0.0 &lt;= x &lt; 1.0</entry>
-       <entry><literal>random()</literal></entry>
-       <entry></entry>
-      </row>
-
-      <row>
-       <entry>
-        <indexterm>
          <primary>round</primary>
         </indexterm>
         <literal><function>round(<type>dp</type> or <type>numeric</type>)</function></literal>
@@ -860,20 +847,6 @@
        <entry>round to <parameter>s</parameter> decimal places</entry>
        <entry><literal>round(42.4382, 2)</literal></entry>
        <entry><literal>42.44</literal></entry>
-      </row>
-
-      <row>
-       <entry>
-        <indexterm>
-         <primary>setseed</primary>
-        </indexterm>
-        <literal><function>setseed(<type>dp</type>)</function></literal>
-       </entry>
-       <entry><type>void</type></entry>
-       <entry>set seed for subsequent <literal>random()</literal> calls (value between -1.0 and
-       1.0, inclusive)</entry>
-       <entry><literal>setseed(0.54823)</literal></entry>
-       <entry></entry>
       </row>
 
       <row>
@@ -950,6 +923,56 @@
      </tbody>
     </tgroup>
    </table>
+
+  <para>
+    <xref linkend="functions-math-random-table"> shows functions for
+    generating random numbers.
+  </para>
+
+   <table id="functions-math-random-table">
+    <title>Random Functions</title>
+
+    <tgroup cols="3">
+     <thead>
+      <row>
+       <entry>Function</entry>
+       <entry>Return Type</entry>
+       <entry>Description</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry>
+        <indexterm>
+         <primary>random</primary>
+        </indexterm>
+        <literal><function>random()</function></literal>
+       </entry>
+       <entry><type>dp</type></entry>
+       <entry>random value in the range 0.0 &lt;= x &lt; 1.0</entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
+         <primary>setseed</primary>
+        </indexterm>
+        <literal><function>setseed(<type>dp</type>)</function></literal>
+       </entry>
+       <entry><type>void</type></entry>
+       <entry>set seed for subsequent <literal>random()</literal> calls (value between -1.0 and
+       1.0, inclusive)</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+  <para>
+   The characteristics of the values returned by
+   <literal><function>random()</function></literal> depend
+   on the system implementation. It is not suitable for cryptographic
+   applications; see <xref linkend="pgcrypto"> module for an alternative.
+   </para>
 
   <para>
    Finally, <xref linkend="functions-math-trig-table"> shows the
@@ -1290,6 +1313,22 @@
         start/end/both ends of the <parameter>string</parameter>
        </entry>
        <entry><literal>trim(both 'x' from 'xTomxx')</literal></entry>
+       <entry><literal>Tom</literal></entry>
+      </row>
+
+      <row>
+       <entry>
+        <literal><function>trim(<optional>leading | trailing
+        | both</optional> <optional>from</optional>
+        <parameter>string</parameter>
+        <optional><parameter>, characters</parameter></optional>
+        )</function></literal>
+       </entry>
+       <entry><type>text</type></entry>
+       <entry>
+        Non-standard version of <function>trim()</>
+       </entry>
+       <entry><literal>trim(both from 'xTomxx', 'x')</literal></entry>
        <entry><literal>Tom</literal></entry>
       </row>
 
@@ -2807,7 +2846,7 @@
       </row>
 
       <row>
-       <entry><literal>ut8_to_euc_jis_2004</literal></entry>
+       <entry><literal>utf8_to_euc_jis_2004</literal></entry>
        <entry><literal>UTF8</literal></entry>
        <entry><literal>EUC_JIS_2004</literal></entry>
       </row>
@@ -2819,7 +2858,7 @@
       </row>
 
       <row>
-       <entry><literal>ut8_to_shift_jis_2004</literal></entry>
+       <entry><literal>utf8_to_shift_jis_2004</literal></entry>
        <entry><literal>UTF8</literal></entry>
        <entry><literal>SHIFT_JIS_2004</literal></entry>
       </row>
@@ -3381,7 +3420,8 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
 
   <para>
    See also the aggregate function <function>string_agg</function> in
-   <xref linkend="functions-aggregate">.
+   <xref linkend="functions-aggregate"> and the large object functions
+   in <xref linkend="lo-funcs">.
   </para>
  </sect1>
 
@@ -5623,7 +5663,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        </row>
        <row>
         <entry><literal>J</literal></entry>
-        <entry>Julian Day (days since November 24, 4714 BC at midnight)</entry>
+        <entry>Julian Day (integer days since November 24, 4714 BC at midnight UTC)</entry>
        </row>
        <row>
         <entry><literal>Q</literal></entry>
@@ -5644,6 +5684,10 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        <row>
         <entry><literal>tz</literal></entry>
         <entry>lower case time-zone name</entry>
+       </row>
+       <row>
+        <entry><literal>OF</literal></entry>
+        <entry>time-zone offset</entry>
        </row>
       </tbody>
      </tgroup>
@@ -6411,7 +6455,7 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
         </entry>
         <entry><type>interval</type></entry>
         <entry>Subtract arguments, producing a <quote>symbolic</> result that
-        uses years and months</entry>
+        uses years and months, rather than just days</entry>
         <entry><literal>age(timestamp '2001-04-10', timestamp '1957-06-13')</literal></entry>
         <entry><literal>43 years 9 mons 27 days</literal></entry>
        </row>
@@ -6649,6 +6693,48 @@ SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');
        <row>
         <entry>
          <indexterm>
+          <primary>make_date</primary>
+         </indexterm>
+         <literal>
+            <function>
+             make_date(<parameter>year</parameter> <type>int</type>,
+             <parameter>month</parameter> <type>int</type>,
+             <parameter>day</parameter> <type>int</type>)
+            </function>
+         </literal>
+        </entry>
+        <entry><type>date</type></entry>
+        <entry>
+         Create date from year, month and day fields
+        </entry>
+        <entry><literal>make_date(2013, 7, 15)</literal></entry>
+        <entry><literal>2013-07-15</literal></entry>
+       </row>
+
+       <row>
+        <entry>
+         <indexterm>
+          <primary>make_time</primary>
+         </indexterm>
+         <literal>
+          <function>
+           make_time(<parameter>hour</parameter> <type>int</type>,
+           <parameter>min</parameter> <type>int</type>,
+           <parameter>sec</parameter> <type>double precision</type>)
+          </function>
+         </literal>
+        </entry>
+        <entry><type>time</type></entry>
+        <entry>
+         Create time from hour, minute and seconds fields
+        </entry>
+        <entry><literal>make_time(8, 15, 23.5)</literal></entry>
+        <entry><literal>08:15:23.5</literal></entry>
+       </row>
+
+       <row>
+        <entry>
+         <indexterm>
           <primary>now</primary>
          </indexterm>
          <literal><function>now()</function></literal>
@@ -6749,9 +6835,9 @@ SELECT (DATE '2001-10-30', DATE '2001-10-30') OVERLAPS
   <para>
    When adding an <type>interval</type> value to (or subtracting an
    <type>interval</type> value from) a <type>timestamp with time zone</type>
-   value, the days component advances (or decrements) the date of the
+   value, the days component advances or decrements the date of the
    <type>timestamp with time zone</type> by the indicated number of days.
-   Across daylight saving time changes (with the session time zone set to a
+   Across daylight saving time changes (when the session time zone is set to a
    time zone that recognizes DST), this means <literal>interval '1 day'</literal>
    does not necessarily equal <literal>interval '24 hours'</literal>.
    For example, with the session time zone set to <literal>CST7CDT</literal>,
@@ -6765,14 +6851,47 @@ SELECT (DATE '2001-10-30', DATE '2001-10-30') OVERLAPS
   </para>
 
   <para>
-   Note there can be ambiguity in the <literal>months</> returned by
-   <function>age</> because different months have a different number of
+   Note there can be ambiguity in the <literal>months</> field returned by
+   <function>age</> because different months have different numbers of
    days.  <productname>PostgreSQL</>'s approach uses the month from the
    earlier of the two dates when calculating partial months.  For example,
    <literal>age('2004-06-01', '2004-04-30')</> uses April to yield
    <literal>1 mon 1 day</>, while using May would yield <literal>1 mon 2
    days</> because May has 31 days, while April has only 30.
   </para>
+
+  <para>
+   Subtraction of dates and timestamps can also be complex.  One conceptually
+   simple way to perform subtraction is to convert each value to a number
+   of seconds using <literal>EXTRACT(EPOCH FROM ...)</>, then subtract the
+   results; this produces the
+   number of <emphasis>seconds</> between the two values.  This will adjust
+   for the number of days in each month, timezone changes, and daylight
+   saving time adjustments.  Subtraction of date or timestamp
+   values with the <quote><literal>-</></quote> operator
+   returns the number of days (24-hours) and hours/minutes/seconds
+   between the values, making the same adjustments.  The <function>age</>
+   function returns years, months, days, and hours/minutes/seconds,
+   performing field-by-field subtraction and then adjusting for negative
+   field values.  The following queries illustrate the differences in these
+   approaches.  The sample results were produced with <literal>timezone
+   = 'US/Eastern'</>; there is a daylight saving time change between the
+   two dates used:
+  </para>
+
+<screen>
+SELECT EXTRACT(EPOCH FROM timestamptz '2013-07-01 12:00:00') -
+       EXTRACT(EPOCH FROM timestamptz '2013-03-01 12:00:00');
+<lineannotation>Result: </lineannotation><computeroutput>10537200</computeroutput>
+SELECT (EXTRACT(EPOCH FROM timestamptz '2013-07-01 12:00:00') -
+        EXTRACT(EPOCH FROM timestamptz '2013-03-01 12:00:00'))
+        / 60 / 60 / 24;
+<lineannotation>Result: </lineannotation><computeroutput>121.958333333333</computeroutput>
+SELECT timestamptz '2013-07-01 12:00:00' - timestamptz '2013-03-01 12:00:00';
+<lineannotation>Result: </lineannotation><computeroutput>121 days 23:00:00</computeroutput>
+SELECT age(timestamptz '2013-07-01 12:00:00', timestamptz '2013-03-01 12:00:00');
+<lineannotation>Result: </lineannotation><computeroutput>4 mons</computeroutput>
+</screen>
 
   <sect2 id="functions-datetime-extract">
    <title><function>EXTRACT</function>, <function>date_part</function></title>
@@ -8068,6 +8187,12 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><type>circle</type></entry>
         <entry>polygon to circle</entry>
         <entry><literal>circle(polygon '((0,0),(1,1),(2,0))')</literal></entry>
+       </row>
+       <row>
+        <entry><literal><function>line(<type>point</type>, <type>point</type>)</function></literal></entry>
+        <entry><type>line</type></entry>
+        <entry>points to line</entry>
+        <entry><literal>line(point '(-1,0)', point '(1,0)')</literal></entry>
        </row>
        <row>
         <entry>
@@ -10036,7 +10161,7 @@ table2-mapping
        </entry>
        <entry><type>json</type></entry>
        <entry>
-         Returns JSON object pointed to by <parameter>path_elems</parameter>.
+         Returns JSON value pointed to by <parameter>path_elems</parameter>.
        </entry>
        <entry><literal>json_extract_path('{"f2":{"f3":1},"f4":{"f5":99,"f6":"foo"}}','f4')</literal></entry>
        <entry><literal>{"f5":99,"f6":"foo"}</literal></entry>
@@ -10050,7 +10175,7 @@ table2-mapping
        </entry>
        <entry><type>text</type></entry>
        <entry>
-         Returns JSON object pointed to by <parameter>path_elems</parameter>.
+         Returns JSON value pointed to by <parameter>path_elems</parameter>.
        </entry>
        <entry><literal>json_extract_path_text('{"f2":{"f3":1},"f4":{"f5":99,"f6":"foo"}}','f4', 'f6')</literal></entry>
        <entry><literal>foo</literal></entry>
@@ -10088,7 +10213,7 @@ table2-mapping
          Expands the object in <replaceable>from_json</replaceable> to a row whose columns match
          the record type defined by base. Conversion will be best
          effort; columns in base with no corresponding key in <replaceable>from_json</replaceable>
-         will be left null.  A column may only be specified once.
+         will be left null. If a column is specified more than once, the last value is used.
        </entry>
        <entry><literal>select * from json_populate_record(null::x, '{"a":1,"b":2}')</literal></entry>
        <entry>
@@ -10111,8 +10236,8 @@ table2-mapping
          Expands the outermost set of objects in <replaceable>from_json</replaceable> to a set
          whose columns match the record type defined by base.
          Conversion will be best effort; columns in base with no
-         corresponding key in <replaceable>from_json</replaceable> will be left null.  A column
-         may only be specified once.
+         corresponding key in <replaceable>from_json</replaceable> will be left null.
+         If a column is specified more than once, the last value is used.
        </entry>
        <entry><literal>select * from json_populate_recordset(null::x, '[{"a":1,"b":2},{"a":3,"b":4}]')</literal></entry>
        <entry>
@@ -10133,7 +10258,7 @@ table2-mapping
        </entry>
        <entry><type>SETOF json</type></entry>
        <entry>
-         Expands a JSON array to a set of JSON elements.
+         Expands a JSON array to a set of JSON values.
        </entry>
        <entry><literal>json_array_elements('[1,true, [2,false]]')</literal></entry>
        <entry>
@@ -10145,6 +10270,23 @@ table2-mapping
  [2,false]
 </programlisting>
        </entry>
+      </row>
+      <row>
+       <entry>
+         <indexterm>
+          <primary>json_typeof</primary>
+         </indexterm>
+         <literal>json_typeof(json)</literal>
+       </entry>
+       <entry><type>text</type></entry>
+       <entry>
+         Returns the type of the outermost JSON value as a text string.  The types are
+         <literal>object</>, <literal>array</>, <literal>string</>, <literal>number</>,
+         <literal>boolean</>, and <literal>null</>.  (See note below regarding the
+         distinction between a JSON <literal>null</> and a SQL NULL.)
+       </entry>
+       <entry><literal>json_typeof('-123.4')</literal></entry>
+       <entry><literal>number</literal></entry>
       </row>
      </tbody>
     </tgroup>
@@ -10175,6 +10317,14 @@ table2-mapping
       The <xref linkend="hstore"> extension has a cast from <type>hstore</type> to
       <type>json</type>, so that converted <type>hstore</type> values are represented as JSON objects,
       not as string values.
+    </para>
+  </note>
+
+  <note>
+    <para>
+      The <literal>json_typeof</> function's <literal>null</> return value should not be confused
+      with a SQL NULL.  While calling <literal>json_typeof('null'::json)</> will return <literal>null</>,
+      calling <literal>json_typeof(NULL::json)</> will return a SQL NULL.
     </para>
   </note>
 
@@ -11035,6 +11185,21 @@ SELECT NULLIF(value, '(none)') ...
         <entry><literallayout class="monospaced">1
 2</literallayout>(2 rows)</entry>
        </row>
+       <row>
+        <entry>
+         <literal>
+          <function>unnest</function>(<type>anyarray</type>, <type>anyarray</type> [, ...])
+         </literal>
+        </entry>
+        <entry><type>setof anyelement, anyelement [, ...]</type></entry>
+        <entry>expand multiple arrays (possibly of different types) to a set
+         of rows.  This is only allowed in the FROM clause; see
+         <xref linkend="queries-tablefunctions"></entry>
+        <entry><literal>unnest(ARRAY[1,2],ARRAY['foo','bar','baz'])</literal></entry>
+        <entry><literallayout class="monospaced">1    foo
+2    bar
+NULL baz</literallayout>(3 rows)</entry>
+       </row>
       </tbody>
      </tgroup>
     </table>
@@ -11395,10 +11560,13 @@ SELECT NULLIF(value, '(none)') ...
 
   <para>
    <firstterm>Aggregate functions</firstterm> compute a single result
-   from a set of input values.  The built-in aggregate functions
+   from a set of input values.  The built-in normal aggregate functions
    are listed in
    <xref linkend="functions-aggregate-table"> and
    <xref linkend="functions-aggregate-statistics-table">.
+   The built-in ordered-set aggregate functions
+   are listed in <xref linkend="functions-orderedset-table"> and
+   <xref linkend="functions-hypothetical-table">.
    The special syntax considerations for aggregate
    functions are explained in <xref linkend="syntax-aggregates">.
    Consult <xref linkend="tutorial-agg"> for additional introductory
@@ -12142,6 +12310,290 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
    </tgroup>
   </table>
 
+  <para>
+   <xref linkend="functions-orderedset-table"> shows some
+   aggregate functions that use the <firstterm>ordered-set aggregate</>
+   syntax.  These functions are sometimes referred to as <quote>inverse
+   distribution</> functions.
+  </para>
+
+  <indexterm>
+   <primary>ordered-set aggregate</primary>
+   <secondary>built-in</secondary>
+  </indexterm>
+  <indexterm>
+   <primary>inverse distribution</primary>
+  </indexterm>
+
+  <table id="functions-orderedset-table">
+   <title>Ordered-Set Aggregate Functions</title>
+
+   <tgroup cols="5">
+    <thead>
+     <row>
+      <entry>Function</entry>
+      <entry>Direct Argument Type(s)</entry>
+      <entry>Aggregated Argument Type(s)</entry>
+      <entry>Return Type</entry>
+      <entry>Description</entry>
+     </row>
+    </thead>
+
+    <tbody>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>mode</primary>
+        <secondary>statistical</secondary>
+       </indexterm>
+       <function>mode() WITHIN GROUP (ORDER BY <replaceable class="parameter">sort_expression</replaceable>)</function>
+      </entry>
+      <entry>
+      </entry>
+      <entry>
+       any sortable type
+      </entry>
+      <entry>
+       same as sort expression
+      </entry>
+      <entry>
+       returns the most frequent input value (arbitrarily choosing the first
+       one if there are multiple equally-frequent results)
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>percentile</primary>
+        <secondary>continuous</secondary>
+       </indexterm>
+       <indexterm>
+        <primary>median</primary>
+       </indexterm>
+       <function>percentile_cont(<replaceable class="parameter">fraction</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sort_expression</replaceable>)</function>
+      </entry>
+      <entry>
+       <type>double precision</type>
+      </entry>
+      <entry>
+       <type>double precision</type> or <type>interval</type>
+      </entry>
+      <entry>
+       same as sort expression
+      </entry>
+      <entry>
+       continuous percentile: returns a value corresponding to the specified
+       fraction in the ordering, interpolating between adjacent input items if
+       needed
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <function>percentile_cont(<replaceable class="parameter">fractions</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sort_expression</replaceable>)</function>
+      </entry>
+      <entry>
+       <type>double precision[]</type>
+      </entry>
+      <entry>
+       <type>double precision</type> or <type>interval</type>
+      </entry>
+      <entry>
+       array of sort expression's type
+      </entry>
+      <entry>
+       multiple continuous percentile: returns an array of results matching
+       the shape of the <literal>fractions</literal> parameter, with each
+       non-null element replaced by the value corresponding to that percentile
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>percentile</primary>
+        <secondary>discrete</secondary>
+       </indexterm>
+       <function>percentile_disc(<replaceable class="parameter">fraction</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sort_expression</replaceable>)</function>
+      </entry>
+      <entry>
+       <type>double precision</type>
+      </entry>
+      <entry>
+       any sortable type
+      </entry>
+      <entry>
+       same as sort expression
+      </entry>
+      <entry>
+       discrete percentile: returns the first input value whose position in
+       the ordering equals or exceeds the specified fraction
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <function>percentile_disc(<replaceable class="parameter">fractions</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sort_expression</replaceable>)</function>
+      </entry>
+      <entry>
+       <type>double precision[]</type>
+      </entry>
+      <entry>
+       any sortable type
+      </entry>
+      <entry>
+       array of sort expression's type
+      </entry>
+      <entry>
+       multiple discrete percentile: returns an array of results matching the
+       shape of the <literal>fractions</literal> parameter, with each non-null
+       element replaced by the input value corresponding to that percentile
+      </entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   All the aggregates listed in <xref linkend="functions-orderedset-table">
+   ignore null values in their sorted input.  For those that take
+   a <replaceable>fraction</replaceable> parameter, the fraction value must be
+   between 0 and 1; an error is thrown if not.  However, a null fraction value
+   simply produces a null result.
+  </para>
+
+  <para>
+   Each of the aggregates listed in
+   <xref linkend="functions-hypothetical-table"> is associated with a
+   window function of the same name defined in
+   <xref linkend="functions-window">.  In each case, the aggregate result
+   is the value that the associated window function would have
+   returned for the <quote>hypothetical</> row constructed from
+   <replaceable>args</replaceable>, if such a row had been added to the sorted
+   group of rows computed from the <replaceable>sorted_args</replaceable>.
+  </para>
+
+  <table id="functions-hypothetical-table">
+   <title>Hypothetical-Set Aggregate Functions</title>
+
+   <tgroup cols="5">
+    <thead>
+     <row>
+      <entry>Function</entry>
+      <entry>Direct Argument Type(s)</entry>
+      <entry>Aggregated Argument Type(s)</entry>
+      <entry>Return Type</entry>
+      <entry>Description</entry>
+     </row>
+    </thead>
+
+    <tbody>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>rank</primary>
+        <secondary>hypothetical</secondary>
+       </indexterm>
+       <function>rank(<replaceable class="parameter">args</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sorted_args</replaceable>)</function>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <type>bigint</type>
+      </entry>
+      <entry>
+       rank of the hypothetical row, with gaps for duplicate rows
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>dense_rank</primary>
+        <secondary>hypothetical</secondary>
+       </indexterm>
+       <function>dense_rank(<replaceable class="parameter">args</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sorted_args</replaceable>)</function>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <type>bigint</type>
+      </entry>
+      <entry>
+       rank of the hypothetical row, without gaps
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>percent_rank</primary>
+        <secondary>hypothetical</secondary>
+       </indexterm>
+       <function>percent_rank(<replaceable class="parameter">args</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sorted_args</replaceable>)</function>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <type>double precision</type>
+      </entry>
+      <entry>
+       relative rank of the hypothetical row, ranging from 0 to 1
+      </entry>
+     </row>
+
+     <row>
+      <entry>
+       <indexterm>
+        <primary>cume_dist</primary>
+        <secondary>hypothetical</secondary>
+       </indexterm>
+       <function>cume_dist(<replaceable class="parameter">args</replaceable>) WITHIN GROUP (ORDER BY <replaceable class="parameter">sorted_args</replaceable>)</function>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <literal>VARIADIC</> <type>"any"</type>
+      </entry>
+      <entry>
+       <type>double precision</type>
+      </entry>
+      <entry>
+       relative rank of the hypothetical row, ranging from
+       1/<replaceable>N</> to 1
+      </entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>
+   For each of these hypothetical-set aggregates, the list of direct arguments
+   given in <replaceable>args</replaceable> must match the number and types of
+   the aggregated arguments given in <replaceable>sorted_args</replaceable>.
+   Unlike most built-in aggregates, these aggregates are not strict, that is
+   they do not drop input rows containing nulls.  Null values sort according
+   to the rule specified in the <literal>ORDER BY</> clause.
+  </para>
+
  </sect1>
 
  <sect1 id="functions-window">
@@ -12167,9 +12619,10 @@ SELECT xmlagg(x) FROM (SELECT x FROM test ORDER BY y DESC) AS tab;
   </para>
 
   <para>
-   In addition to these functions, any built-in or user-defined aggregate
-   function can be used as a window function (see
-   <xref linkend="functions-aggregate"> for a list of the built-in aggregates).
+   In addition to these functions, any built-in or user-defined normal
+   aggregate function (but not ordered-set or hypothetical-set aggregates)
+   can be used as a window function; see
+   <xref linkend="functions-aggregate"> for a list of the built-in aggregates.
    Aggregate functions act as window functions only when an <literal>OVER</>
    clause follows the call; otherwise they act as regular aggregates.
   </para>
@@ -12686,7 +13139,7 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 
   <para>
    See <xref linkend="row-wise-comparison"> for details about the meaning
-   of a row-wise comparison.
+   of a row constructor comparison.
   </para>
   </sect2>
 
@@ -12742,12 +13195,12 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 
   <para>
    See <xref linkend="row-wise-comparison"> for details about the meaning
-   of a row-wise comparison.
+   of a row constructor comparison.
   </para>
   </sect2>
 
   <sect2>
-   <title>Row-wise Comparison</title>
+   <title>Single-row Comparison</title>
 
    <indexterm zone="functions-subquery">
     <primary>comparison</primary>
@@ -12770,7 +13223,7 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
 
   <para>
    See <xref linkend="row-wise-comparison"> for details about the meaning
-   of a row-wise comparison.
+   of a row constructor comparison.
   </para>
   </sect2>
  </sect1>
@@ -12800,12 +13253,22 @@ WHERE EXISTS (SELECT 1 FROM tab2 WHERE col2 = tab1.col2);
   </indexterm>
 
   <indexterm>
+   <primary>composite type</primary>
+   <secondary>comparison</secondary>
+  </indexterm>
+
+  <indexterm>
    <primary>row-wise comparison</primary>
   </indexterm>
 
   <indexterm>
    <primary>comparison</primary>
-   <secondary>row-wise</secondary>
+   <secondary>composite type</secondary>
+  </indexterm>
+
+  <indexterm>
+   <primary>comparison</primary>
+   <secondary>row constructor</secondary>
   </indexterm>
 
   <indexterm>
@@ -12970,7 +13433,7 @@ AND
   </sect2>
 
   <sect2 id="row-wise-comparison">
-   <title>Row-wise Comparison</title>
+   <title>Row Constructor Comparison</title>
 
 <synopsis>
 <replaceable>row_constructor</replaceable> <replaceable>operator</replaceable> <replaceable>row_constructor</replaceable>
@@ -12980,19 +13443,24 @@ AND
    Each side is a row constructor,
    as described in <xref linkend="sql-syntax-row-constructors">.
    The two row values must have the same number of fields.
-   Each side is evaluated and they are compared row-wise.  Row comparisons
-   are allowed when the <replaceable>operator</replaceable> is
+   Each side is evaluated and they are compared row-wise.  Row constructor
+   comparisons are allowed when the <replaceable>operator</replaceable> is
    <literal>=</>,
    <literal>&lt;&gt;</>,
    <literal>&lt;</>,
    <literal>&lt;=</>,
    <literal>&gt;</> or
-   <literal>&gt;=</>,
-   or has semantics similar to one of these.  (To be specific, an operator
-   can be a row comparison operator if it is a member of a B-tree operator
-   class, or is the negator of the <literal>=</> member of a B-tree operator
-   class.)
+   <literal>&gt;=</>.
+   Every row element must be of a type which has a default B-tree operator
+   class or the attempted comparison may generate an error.
   </para>
+
+  <note>
+   <para>
+    Errors related to the number or types of elements might not occur if
+    the comparison is resolved using earlier columns.
+   </para>
+  </note>
 
   <para>
    The <literal>=</> and <literal>&lt;&gt;</> cases work slightly differently
@@ -13051,20 +13519,64 @@ AND
    be either true or false, never null.
   </para>
 
-  <note>
-   <para>
-    The SQL specification requires row-wise comparison to return NULL if the
-    result depends on comparing two NULL values or a NULL and a non-NULL.
-    <productname>PostgreSQL</productname> does this only when comparing the
-    results of two row constructors or comparing a row constructor to the
-    output of a subquery (as in <xref linkend="functions-subquery">).
-    In other contexts where two composite-type values are compared, two
-    NULL field values are considered equal, and a NULL is considered larger
-    than a non-NULL.  This is necessary in order to have consistent sorting
-    and indexing behavior for composite types.
-   </para>
-  </note>
+  </sect2>
 
+  <sect2 id="composite-type-comparison">
+   <title>Composite Type Comparison</title>
+
+<synopsis>
+<replaceable>record</replaceable> <replaceable>operator</replaceable> <replaceable>record</replaceable>
+</synopsis>
+
+  <para>
+   The SQL specification requires row-wise comparison to return NULL if the
+   result depends on comparing two NULL values or a NULL and a non-NULL.
+   <productname>PostgreSQL</productname> does this only when comparing the
+   results of two row constructors (as in
+   <xref linkend="row-wise-comparison">) or comparing a row constructor
+   to the output of a subquery (as in <xref linkend="functions-subquery">).
+   In other contexts where two composite-type values are compared, two
+   NULL field values are considered equal, and a NULL is considered larger
+   than a non-NULL.  This is necessary in order to have consistent sorting
+   and indexing behavior for composite types.
+  </para>
+
+  <para>
+   Each side is evaluated and they are compared row-wise.  Composite type
+   comparisons are allowed when the <replaceable>operator</replaceable> is
+   <literal>=</>,
+   <literal>&lt;&gt;</>,
+   <literal>&lt;</>,
+   <literal>&lt;=</>,
+   <literal>&gt;</> or
+   <literal>&gt;=</>,
+   or has semantics similar to one of these.  (To be specific, an operator
+   can be a row comparison operator if it is a member of a B-tree operator
+   class, or is the negator of the <literal>=</> member of a B-tree operator
+   class.)  The default behavior of the above operators is the same as for
+   <literal>IS [ NOT ] DISTINCT FROM</literal> for row constructors (see
+   <xref linkend="row-wise-comparison">).
+  </para>
+
+  <para>
+   To support matching of rows which include elements without a default
+   B-tree operator class, the following operators are defined for composite
+   type comparison:
+   <literal>*=</>,
+   <literal>*&lt;&gt;</>,
+   <literal>*&lt;</>,
+   <literal>*&lt;=</>,
+   <literal>*&gt;</>, and
+   <literal>*&gt;=</>.
+   These operators compare the internal binary representation of the two
+   rows.  Two rows might have a different binary representation even
+   though comparisons of the two rows with the equality operator is true. 
+   The ordering of rows under these comparision operators is deterministic
+   but not otherwise meaningful.  These operators are used internally for
+   materialized views and might be useful for other specialized purposes
+   such as replication but are not intended to be generally useful for
+   writing queries.
+  </para>
   </sect2>
  </sect1>
 
@@ -13086,6 +13598,8 @@ AND
    functions, as detailed in <xref linkend="functions-srf-series"> and
    <xref linkend="functions-srf-subscripts">.  Other, more specialized
    set-returning functions are described elsewhere in this manual.
+   See <xref linkend="queries-tablefunctions"> for ways to combine multiple
+   set-returning functions.
   </para>
 
   <table id="functions-srf-series">
@@ -13274,7 +13788,7 @@ select $1[i][j]
         generate_subscripts($1,2) g2(j);
 $$ LANGUAGE sql IMMUTABLE;
 CREATE FUNCTION
-postgres=# SELECT * FROM unnest2(ARRAY[[1,2],[3,4]]);
+SELECT * FROM unnest2(ARRAY[[1,2],[3,4]]);
  unnest2 
 ---------
        1
@@ -13282,6 +13796,45 @@ postgres=# SELECT * FROM unnest2(ARRAY[[1,2],[3,4]]);
        3
        4
 (4 rows)
+</programlisting>
+  </para>
+
+  <indexterm>
+   <primary>ordinality</primary>
+  </indexterm>
+
+  <para>
+   When a function in the <literal>FROM</literal> clause is suffixed
+   by <literal>WITH ORDINALITY</literal>, a <type>bigint</type> column is
+   appended to the output which starts from 1 and increments by 1 for each row
+   of the function's output.  This is most useful in the case of set returning
+   functions such as <function>unnest()</>.
+
+<programlisting>
+-- set returning function WITH ORDINALITY
+SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
+       ls        | n
+-----------------+----
+ pg_serial       |  1
+ pg_twophase     |  2
+ postmaster.opts |  3
+ pg_notify       |  4
+ postgresql.conf |  5
+ pg_tblspc       |  6
+ logfile         |  7
+ base            |  8
+ postmaster.pid  |  9
+ pg_ident.conf   | 10
+ global          | 11
+ pg_clog         | 12
+ pg_snapshots    | 13
+ pg_multixact    | 14
+ PG_VERSION      | 15
+ pg_xlog         | 16
+ pg_hba.conf     | 17
+ pg_stat_tmp     | 18
+ pg_subtrans     | 19
+(19 rows)
 </programlisting>
   </para>
 
@@ -15744,6 +16297,9 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    <indexterm>
     <primary>pg_relation_filepath</primary>
    </indexterm>
+   <indexterm>
+    <primary>pg_filenode_relation</primary>
+   </indexterm>
 
    <table id="functions-admin-dblocation">
     <title>Database Object Location Functions</title>
@@ -15772,6 +16328,15 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         File path name of the specified relation
        </entry>
       </row>
+      <row>
+       <entry>
+        <literal><function>pg_filenode_relation(<parameter>tablespace</parameter> <type>oid</type>, <parameter>filenode</parameter> <type>oid</type>)</function></literal>
+        </entry>
+       <entry><type>regclass</type></entry>
+       <entry>
+        Find the relation associated with a given tablespace and filenode
+       </entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
@@ -15793,6 +16358,13 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     <function>pg_relation_filenode</>, but it returns the entire file path name
     (relative to the database cluster's data directory <varname>PGDATA</>) of
     the relation.
+   </para>
+
+   <para>
+    <function>pg_filenode_relation</> is the reverse of
+    <function>pg_relation_filenode</>. Given a <quote>tablespace</> OID and
+    a <quote>filenode</>, it returns the associated relation's OID. For a table
+    in the database's default tablespace, the tablespace can be specified as 0.
    </para>
 
   </sect2>

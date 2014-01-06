@@ -721,10 +721,13 @@ BEGIN;
 CREATE INDEX std_index on concur_heap(f2);
 COMMIT;
 
--- check to make sure that the failed indexes were cleaned up properly and the
--- successful indexes are created properly. Notably that they do NOT have the
--- "invalid" flag set.
-
+-- Failed builds are left invalid by VACUUM FULL, fixed by REINDEX
+VACUUM FULL concur_heap;
+REINDEX TABLE concur_heap;
+DELETE FROM concur_heap WHERE f1 = 'b';
+VACUUM FULL concur_heap;
+\d concur_heap
+REINDEX TABLE concur_heap;
 \d concur_heap
 
 --
@@ -764,6 +767,7 @@ CREATE UNIQUE INDEX cwi_uniq_idx ON cwi_test(a , b);
 ALTER TABLE cwi_test ADD primary key USING INDEX cwi_uniq_idx;
 
 \d cwi_test
+\d cwi_uniq_idx
 
 CREATE UNIQUE INDEX cwi_uniq2_idx ON cwi_test(b , a);
 ALTER TABLE cwi_test DROP CONSTRAINT cwi_uniq_idx,
@@ -771,6 +775,7 @@ ALTER TABLE cwi_test DROP CONSTRAINT cwi_uniq_idx,
 		USING INDEX cwi_uniq2_idx;
 
 \d cwi_test
+\d cwi_replaced_pkey
 
 DROP INDEX cwi_replaced_pkey;	-- Should fail; a constraint depends on it
 
@@ -893,7 +898,7 @@ SELECT count(*) FROM dupindexcols
 -- Check ordering of =ANY indexqual results (bug in 9.2.0)
 --
 
-vacuum analyze tenk1;		-- ensure we get consistent plans here
+vacuum tenk1;		-- ensure we get consistent plans here
 
 explain (costs off)
 SELECT unique1 FROM tenk1

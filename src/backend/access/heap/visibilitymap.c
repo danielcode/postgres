@@ -287,10 +287,10 @@ visibilitymap_set(Relation rel, BlockNumber heapBlk, Buffer heapBuf,
 										  cutoff_xid);
 
 				/*
-				 * If data checksums are enabled, we need to protect the heap
-				 * page from being torn.
+				 * If data checksums are enabled (or wal_log_hints=on), we
+				 * need to protect the heap page from being torn.
 				 */
-				if (DataChecksumsEnabled())
+				if (XLogHintBitIsNeeded())
 				{
 					Page		heapPage = BufferGetPage(heapBuf);
 
@@ -476,11 +476,15 @@ visibilitymap_truncate(Relation rel, BlockNumber nheapblocks)
 		/* Clear out the unwanted bytes. */
 		MemSet(&map[truncByte + 1], 0, MAPSIZE - (truncByte + 1));
 
-		/*
+		/*----
 		 * Mask out the unwanted bits of the last remaining byte.
 		 *
-		 * ((1 << 0) - 1) = 00000000 ((1 << 1) - 1) = 00000001 ... ((1 << 6) -
-		 * 1) = 00111111 ((1 << 7) - 1) = 01111111
+		 * ((1 << 0) - 1) = 00000000
+		 * ((1 << 1) - 1) = 00000001
+		 * ...
+		 * ((1 << 6) - 1) = 00111111
+		 * ((1 << 7) - 1) = 01111111
+		 *----
 		 */
 		map[truncByte] &= (1 << truncBit) - 1;
 

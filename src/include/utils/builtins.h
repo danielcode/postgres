@@ -460,6 +460,7 @@ extern Datum pg_size_pretty_numeric(PG_FUNCTION_ARGS);
 extern Datum pg_table_size(PG_FUNCTION_ARGS);
 extern Datum pg_indexes_size(PG_FUNCTION_ARGS);
 extern Datum pg_relation_filenode(PG_FUNCTION_ARGS);
+extern Datum pg_filenode_relation(PG_FUNCTION_ARGS);
 extern Datum pg_relation_filepath(PG_FUNCTION_ARGS);
 
 /* genfile.c */
@@ -513,6 +514,21 @@ extern Datum oidvectorge(PG_FUNCTION_ARGS);
 extern Datum oidvectorgt(PG_FUNCTION_ARGS);
 extern oidvector *buildoidvector(const Oid *oids, int n);
 extern Oid	oidparse(Node *node);
+
+/* orderedsetaggs.c */
+extern Datum ordered_set_transition(PG_FUNCTION_ARGS);
+extern Datum ordered_set_transition_multi(PG_FUNCTION_ARGS);
+extern Datum percentile_disc_final(PG_FUNCTION_ARGS);
+extern Datum percentile_cont_float8_final(PG_FUNCTION_ARGS);
+extern Datum percentile_cont_interval_final(PG_FUNCTION_ARGS);
+extern Datum percentile_disc_multi_final(PG_FUNCTION_ARGS);
+extern Datum percentile_cont_float8_multi_final(PG_FUNCTION_ARGS);
+extern Datum percentile_cont_interval_multi_final(PG_FUNCTION_ARGS);
+extern Datum mode_final(PG_FUNCTION_ARGS);
+extern Datum hypothetical_rank_final(PG_FUNCTION_ARGS);
+extern Datum hypothetical_percent_rank_final(PG_FUNCTION_ARGS);
+extern Datum hypothetical_cume_dist_final(PG_FUNCTION_ARGS);
+extern Datum hypothetical_dense_rank_final(PG_FUNCTION_ARGS);
 
 /* pseudotypes.c */
 extern Datum cstring_in(PG_FUNCTION_ARGS);
@@ -630,6 +646,13 @@ extern Datum record_gt(PG_FUNCTION_ARGS);
 extern Datum record_le(PG_FUNCTION_ARGS);
 extern Datum record_ge(PG_FUNCTION_ARGS);
 extern Datum btrecordcmp(PG_FUNCTION_ARGS);
+extern Datum record_image_eq(PG_FUNCTION_ARGS);
+extern Datum record_image_ne(PG_FUNCTION_ARGS);
+extern Datum record_image_lt(PG_FUNCTION_ARGS);
+extern Datum record_image_gt(PG_FUNCTION_ARGS);
+extern Datum record_image_le(PG_FUNCTION_ARGS);
+extern Datum record_image_ge(PG_FUNCTION_ARGS);
+extern Datum btrecordimagecmp(PG_FUNCTION_ARGS);
 
 /* ruleutils.c */
 extern bool quote_all_identifiers;
@@ -657,6 +680,7 @@ extern Datum pg_get_functiondef(PG_FUNCTION_ARGS);
 extern Datum pg_get_function_arguments(PG_FUNCTION_ARGS);
 extern Datum pg_get_function_identity_arguments(PG_FUNCTION_ARGS);
 extern Datum pg_get_function_result(PG_FUNCTION_ARGS);
+extern Datum pg_get_function_arg_default(PG_FUNCTION_ARGS);
 extern char *deparse_expression(Node *expr, List *dpcontext,
 				   bool forceprefix, bool showimplicit);
 extern List *deparse_context_for(const char *aliasname, Oid relid);
@@ -981,6 +1005,7 @@ extern Datum int4_accum(PG_FUNCTION_ARGS);
 extern Datum int8_accum(PG_FUNCTION_ARGS);
 extern Datum int8_avg_accum(PG_FUNCTION_ARGS);
 extern Datum numeric_avg(PG_FUNCTION_ARGS);
+extern Datum numeric_sum(PG_FUNCTION_ARGS);
 extern Datum numeric_var_pop(PG_FUNCTION_ARGS);
 extern Datum numeric_var_samp(PG_FUNCTION_ARGS);
 extern Datum numeric_stddev_pop(PG_FUNCTION_ARGS);
