@@ -131,20 +131,4 @@ distcheck: dist
 	rm -rf $(distdir) $(dummy)
 	@echo "Distribution integrity checks out."
 
-LIBPQPARSEROBJS= $(shell cat src/backend/access/objfiles.txt src/backend/bootstrap/objfiles.txt src/backend/catalog/objfiles.txt src/backend/parser/objfiles.txt src/backend/commands/objfiles.txt src/backend/executor/objfiles.txt src/backend/foreign/objfiles.txt src/backend/lib/objfiles.txt src/backend/libpq/objfiles.txt src/backend/nodes/objfiles.txt src/backend/optimizer/objfiles.txt src/backend/port/objfiles.txt src/backend/postmaster/objfiles.txt src/backend/regex/objfiles.txt src/backend/replication/objfiles.txt src/backend/rewrite/objfiles.txt src/backend/storage/objfiles.txt src/backend/tcop/objfiles.txt src/backend/tsearch/objfiles.txt src/backend/utils/objfiles.txt src/timezone/objfiles.txt src/backend/parser/objfiles.txt)
-
-libpqparser:
-	ar cr libpqparser.a $(LIBPQPARSEROBJS)
-	ranlib libpqparser.a
-	cp src/port/libpgport_srv.a $(DESTDIR)$(libdir)
-	cp libpqparser.a $(DESTDIR)$(libdir)/
-
-LIBPQPARSER2OBJS= $(shell cat src/backend/parser/objfiles.txt)
-
-libpqparser2:
-	ar cr libpqparser2.a $(LIBPQPARSEROBJS)
-	ranlib libpqparser2.a
-	# cp src/port/libpgport_srv.a $(DESTDIR)$(libdir)
-	cp libpqparser2.a $(DESTDIR)$(libdir)/
-
 .PHONY: dist distdir distcheck docs install-docs world check-world install-world installcheck-world
