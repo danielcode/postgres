@@ -10,7 +10,7 @@
  * the location.
  *
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/nodes/parsenodes.h
@@ -1669,6 +1669,7 @@ typedef struct CreateTableSpaceStmt
 	char	   *tablespacename;
 	char	   *owner;
 	char	   *location;
+	List	   *options;
 } CreateTableSpaceStmt;
 
 typedef struct DropTableSpaceStmt
@@ -1685,6 +1686,17 @@ typedef struct AlterTableSpaceOptionsStmt
 	List	   *options;
 	bool		isReset;
 } AlterTableSpaceOptionsStmt;
+
+typedef struct AlterTableSpaceMoveStmt
+{
+	NodeTag		type;
+	char	   *orig_tablespacename;
+	ObjectType	objtype;		/* set to -1 if move_all is true */
+	bool		move_all;		/* move all, or just objtype objects? */
+	List	   *roles;			/* List of roles to move objects of */
+	char	   *new_tablespacename;
+	bool		nowait;
+} AlterTableSpaceMoveStmt;
 
 /* ----------------------
  *		Create/Alter Extension Statements
@@ -2521,6 +2533,10 @@ typedef struct VacuumStmt
 	int			options;		/* OR of VacuumOption flags */
 	int			freeze_min_age; /* min freeze age, or -1 to use default */
 	int			freeze_table_age;		/* age at which to scan whole table */
+	int			multixact_freeze_min_age;		/* min multixact freeze age,
+												 * or -1 to use default */
+	int			multixact_freeze_table_age;		/* multixact age at which to
+												 * scan whole table */
 	RangeVar   *relation;		/* single table to process, or NULL */
 	List	   *va_cols;		/* list of column names, or NIL for all */
 } VacuumStmt;

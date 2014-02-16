@@ -2,7 +2,7 @@
  *
  * createlang
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/scripts/createlang.c
@@ -207,12 +207,12 @@ main(int argc, char *argv[])
 	 * older server, and it's easy enough to continue supporting the old way.
 	 */
 	if (PQserverVersion(conn) >= 90100)
-		printfPQExpBuffer(&sql, "CREATE EXTENSION \"%s\";\n", langname);
+		printfPQExpBuffer(&sql, "CREATE EXTENSION \"%s\";", langname);
 	else
-		printfPQExpBuffer(&sql, "CREATE LANGUAGE \"%s\";\n", langname);
+		printfPQExpBuffer(&sql, "CREATE LANGUAGE \"%s\";", langname);
 
 	if (echo)
-		printf("%s", sql.data);
+		printf("%s\n", sql.data);
 	result = PQexec(conn, sql.data);
 	if (PQresultStatus(result) != PGRES_COMMAND_OK)
 	{

@@ -4,7 +4,7 @@
  *	  POSTGRES free space map for quickly finding free space in relations
  *
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -41,8 +41,8 @@
  * MaxFSMRequestSize, exclusive.
  *
  * MaxFSMRequestSize depends on the architecture and BLCKSZ, but assuming
- * default 8k BLCKSZ, and that MaxFSMRequestSize is 24 bytes, the categories
- * look like this
+ * default 8k BLCKSZ, and that MaxFSMRequestSize is 8164 bytes, the
+ * categories look like this:
  *
  *
  * Range	 Category
@@ -379,8 +379,7 @@ fsm_space_needed_to_cat(Size needed)
 
 	/* Can't ask for more space than the highest category represents */
 	if (needed > MaxFSMRequestSize)
-		elog(ERROR, "invalid FSM request size %lu",
-			 (unsigned long) needed);
+		elog(ERROR, "invalid FSM request size %zu", needed);
 
 	if (needed == 0)
 		return 1;

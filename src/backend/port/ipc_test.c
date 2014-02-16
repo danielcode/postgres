@@ -10,13 +10,13 @@
  *	   USE_xxx_SEMAPHORES and USE_xxx_SHARED_MEMORY settings you want.
  *	   Also, adjust the pg_sema.c and pg_shmem.c symlinks in
  *	   src/backend/port/ if needed.
- *	2. In src/backend/port/, do "gmake ipc_test".
+ *	2. In src/backend/port/, do "make ipc_test".
  *	3. Run ipc_test and see if it works.
  *	4. If it seems to work, try building the whole system and running
  *	   the parallel regression tests for a more complete test.
  *
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *

@@ -3,7 +3,7 @@
  * nbtinsert.c
  *	  Item insertion in Lehman and Yao btrees for Postgres.
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -21,7 +21,6 @@
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
-#include "utils/inval.h"
 #include "utils/tqual.h"
 
 
@@ -537,9 +536,8 @@ _bt_findinsertloc(Relation rel,
 	if (itemsz > BTMaxItemSize(page))
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-			errmsg("index row size %lu exceeds maximum %lu for index \"%s\"",
-				   (unsigned long) itemsz,
-				   (unsigned long) BTMaxItemSize(page),
+			errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
+				   itemsz, BTMaxItemSize(page),
 				   RelationGetRelationName(rel)),
 		errhint("Values larger than 1/3 of a buffer page cannot be indexed.\n"
 				"Consider a function index of an MD5 hash of the value, "
@@ -869,13 +867,9 @@ _bt_insertonpg(Relation rel,
 
 		END_CRIT_SECTION();
 
-		/* release buffers; send out relcache inval if metapage changed */
+		/* release buffers */
 		if (BufferIsValid(metabuf))
-		{
-			if (!InRecovery)
-				CacheInvalidateRelcache(rel);
 			_bt_relbuf(rel, metabuf);
-		}
 
 		_bt_relbuf(rel, buf);
 	}
@@ -1963,10 +1957,6 @@ _bt_newroot(Relation rel, Buffer lbuf, Buffer rbuf)
 	}
 
 	END_CRIT_SECTION();
-
-	/* send out relcache inval for metapage change */
-	if (!InRecovery)
-		CacheInvalidateRelcache(rel);
 
 	/* done with metapage */
 	_bt_relbuf(rel, metabuf);

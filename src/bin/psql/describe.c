@@ -6,7 +6,7 @@
  * with servers of versions 7.4 and up.  It's okay to omit irrelevant
  * information for an old server, but not to fail outright.
  *
- * Copyright (c) 2000-2013, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  *
  * src/bin/psql/describe.c
  */
@@ -170,6 +170,11 @@ describeTablespaces(const char *pattern, bool verbose)
 		appendPQExpBufferStr(&buf, ",\n  ");
 		printACLColumn(&buf, "spcacl");
 	}
+
+	if (verbose && pset.sversion >= 90000)
+		appendPQExpBuffer(&buf,
+						  ",\n  spcoptions AS \"%s\"",
+						  gettext_noop("Options"));
 
 	if (verbose && pset.sversion >= 80200)
 		appendPQExpBuffer(&buf,
@@ -577,9 +582,10 @@ describeTypes(const char *pattern, bool verbose, bool showSystem)
 
 
 /* \do
+ * Describe operators
  */
 bool
-describeOperators(const char *pattern, bool showSystem)
+describeOperators(const char *pattern, bool verbose, bool showSystem)
 {
 	PQExpBufferData buf;
 	PGresult   *res;
@@ -605,16 +611,23 @@ describeOperators(const char *pattern, bool showSystem)
 					  "  o.oprname AS \"%s\",\n"
 					  "  CASE WHEN o.oprkind='l' THEN NULL ELSE pg_catalog.format_type(o.oprleft, NULL) END AS \"%s\",\n"
 					  "  CASE WHEN o.oprkind='r' THEN NULL ELSE pg_catalog.format_type(o.oprright, NULL) END AS \"%s\",\n"
-				   "  pg_catalog.format_type(o.oprresult, NULL) AS \"%s\",\n"
-			 "  coalesce(pg_catalog.obj_description(o.oid, 'pg_operator'),\n"
-	"           pg_catalog.obj_description(o.oprcode, 'pg_proc')) AS \"%s\"\n"
-					  "FROM pg_catalog.pg_operator o\n"
-	  "     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = o.oprnamespace\n",
+				  "  pg_catalog.format_type(o.oprresult, NULL) AS \"%s\",\n",
 					  gettext_noop("Schema"),
 					  gettext_noop("Name"),
 					  gettext_noop("Left arg type"),
 					  gettext_noop("Right arg type"),
-					  gettext_noop("Result type"),
+					  gettext_noop("Result type"));
+
+	if (verbose)
+		appendPQExpBuffer(&buf,
+						  "  o.oprcode AS \"%s\",\n",
+						  gettext_noop("Function"));
+
+	appendPQExpBuffer(&buf,
+			 "  coalesce(pg_catalog.obj_description(o.oid, 'pg_operator'),\n"
+	"           pg_catalog.obj_description(o.oprcode, 'pg_proc')) AS \"%s\"\n"
+					  "FROM pg_catalog.pg_operator o\n"
+	  "     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = o.oprnamespace\n",
 					  gettext_noop("Description"));
 
 	if (!showSystem && !pattern)

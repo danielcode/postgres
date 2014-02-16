@@ -174,3 +174,4 @@ pqPutnchar                171
 pqPutInt                  172
 pqPutMsgEnd               173
 pqFlush                   174
+PQhostaddr                175

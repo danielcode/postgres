@@ -7,7 +7,7 @@
  * This is a modified version of src/backend/parser/scan.l
  *
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -56,7 +56,7 @@ static bool isdefine(void);
 static bool isinformixdefine(void);
 
 char *token_start;
-int state_before;
+static int state_before;
 
 struct _yy_buffer
 {

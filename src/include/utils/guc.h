@@ -4,7 +4,7 @@
  * External declarations pertaining to backend/utils/misc/guc.c and
  * backend/utils/misc/guc-file.l
  *
- * Copyright (c) 2000-2013, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * src/include/utils/guc.h
@@ -387,8 +387,10 @@ extern void assign_search_path(const char *newval, void *extra);
 
 /* in access/transam/xlog.c */
 extern bool check_wal_buffers(int *newval, void **extra, GucSource source);
+extern void assign_xlog_sync_method(int new_sync_method, void *extra);
+
+/* in optimizer/path/costsize.c */
 extern bool check_effective_cache_size(int *newval, void **extra, GucSource source);
 extern void set_default_effective_cache_size(void);
-extern void assign_xlog_sync_method(int new_sync_method, void *extra);
 
 #endif   /* GUC_H */

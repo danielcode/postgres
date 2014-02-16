@@ -3,17 +3,17 @@
  *
  *	options functions
  *
- *	Copyright (c) 2010-2013, PostgreSQL Global Development Group
+ *	Copyright (c) 2010-2014, PostgreSQL Global Development Group
  *	contrib/pg_upgrade/option.c
  */
 
 #include "postgres_fe.h"
 
 #include "miscadmin.h"
+#include "getopt_long.h"
 
 #include "pg_upgrade.h"
 
-#include <getopt_long.h>
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -453,9 +453,10 @@ get_sock_dir(ClusterInfo *cluster, bool live_check)
 					sscanf(line, "%hu", &old_cluster.port);
 				if (lineno == LOCK_FILE_LINE_SOCKET_DIR)
 				{
-					cluster->sockdir = pg_malloc(MAXPGPATH);
+					cluster->sockdir = pg_strdup(line);
 					/* strip off newline */
-					sscanf(line, "%s\n", cluster->sockdir);
+					if (strchr(cluster->sockdir, '\n') != NULL)
+						*strchr(cluster->sockdir, '\n') = '\0';
 				}
 			}
 			fclose(fp);

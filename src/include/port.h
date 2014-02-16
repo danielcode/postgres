@@ -3,7 +3,7 @@
  * port.h
  *	  Header for src/port/ compatibility functions.
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/port.h
@@ -382,10 +382,6 @@ extern int	fls(int mask);
 #define ftello(a)		ftell(a)
 #endif
 
-#ifndef HAVE_GETOPT
-extern int	getopt(int nargc, char *const * nargv, const char *ostr);
-#endif
-
 #if !defined(HAVE_GETPEEREID) && !defined(WIN32)
 extern int	getpeereid(int sock, uid_t *uid, gid_t *gid);
 #endif
@@ -472,10 +468,6 @@ extern pqsigfunc pqsignal(int signo, pqsigfunc func);
 
 /* port/quotes.c */
 extern char *escape_single_quotes_ascii(const char *src);
-
-/* port/username.c */
-extern const char *get_user_name(char **errstr);
-extern const char *get_user_name_or_exit(const char *progname);
 
 /* port/wait_error.c */
 extern char *wait_result_to_str(int exit_status);

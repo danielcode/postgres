@@ -3,7 +3,7 @@
  * vacuumlo.c
  *	  This removes orphaned large objects from a database.
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -22,14 +22,11 @@
 #endif
 
 #include "libpq-fe.h"
+#include "pg_getopt.h"
 
 #define atooid(x)  ((Oid) strtoul((x), NULL, 10))
 
 #define BUFSIZE			1024
-
-extern char *optarg;
-extern int	optind,
-			opterr;
 
 enum trivalue
 {

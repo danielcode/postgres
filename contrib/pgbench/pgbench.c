@@ -5,7 +5,7 @@
  * Originally written by Tatsuo Ishii and enhanced by many contributors.
  *
  * contrib/pgbench/pgbench.c
- * Copyright (c) 2000-2013, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2014, PostgreSQL Global Development Group
  * ALL RIGHTS RESERVED;
  *
  * Permission to use, copy, modify, and distribute this software and its
@@ -40,12 +40,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <signal.h>
-
-#ifndef WIN32
 #include <sys/time.h>
-#include <unistd.h>
-#endif   /* ! WIN32 */
-
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
@@ -88,9 +83,6 @@ typedef int pthread_attr_t;
 static int	pthread_create(pthread_t *thread, pthread_attr_t *attr, void *(*start_routine) (void *), void *arg);
 static int	pthread_join(pthread_t th, void **thread_return);
 #endif
-
-extern char *optarg;
-extern int	optind;
 
 
 /********************************************************************
@@ -2974,7 +2966,7 @@ threadRun(void *arg)
 	/* for reporting progress: */
 	int64       thread_start = INSTR_TIME_GET_MICROSEC(thread->start_time);
 	int64		last_report = thread_start;
-	int64		next_report = last_report + progress * 1000000;
+	int64		next_report = last_report + (int64) progress * 1000000;
 	int64		last_count = 0, last_lats = 0, last_sqlats = 0, last_lags = 0;
 
 	AggVals		aggs;
@@ -3210,7 +3202,7 @@ threadRun(void *arg)
 				last_sqlats = sqlats;
 				last_lags = lags;
 				last_report = now;
-				next_report += progress * 1000000;
+				next_report += (int64) progress * 1000000;
 			}
 		}
 #else
@@ -3261,7 +3253,7 @@ threadRun(void *arg)
 				last_sqlats = sqlats;
 				last_lags = lags;
 				last_report = now;
-				next_report += progress * 1000000;
+				next_report += (int64) progress * 1000000;
 			}
 		}
 #endif /* PTHREAD_FORK_EMULATION */

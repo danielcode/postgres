@@ -3,7 +3,7 @@
  * varchar.c
  *	  Functions for the built-in types char(n) and varchar(n).
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -846,6 +846,18 @@ bpcharcmp(PG_FUNCTION_ARGS)
 				len2;
 	int			cmp;
 
+	/*
+	 * Trimming trailing spaces off of both strings can cause a string
+	 * with a character less than a space to compare greater than a
+	 * space-extended string, e.g. this returns false:
+	 *		SELECT E'ab\n'::CHAR(10) < E'ab '::CHAR(10);
+	 * even though '\n' is less than the space if CHAR(10) was
+	 * space-extended.  The correct solution would be to trim only
+	 * the longer string to be the same length of the shorter, if
+	 * possible, then do the comparison.  However, changing this
+	 * might break existing indexes, breaking binary upgrades.
+	 * For details, see http://www.postgresql.org/message-id/CAK+WP1xdmyswEehMuetNztM4H199Z1w9KWRHVMKzyyFM+hV=zA@mail.gmail.com
+	 */
 	len1 = bcTruelen(arg1);
 	len2 = bcTruelen(arg2);
 

@@ -2,7 +2,7 @@
  *
  * reindexdb
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  *
  * src/bin/scripts/reindexdb.c
  *
@@ -253,7 +253,7 @@ reindex_one_database(const char *name, const char *dbname, const char *type,
 		appendPQExpBuffer(&sql, " INDEX %s", name);
 	else if (strcmp(type, "DATABASE") == 0)
 		appendPQExpBuffer(&sql, " DATABASE %s", fmtId(name));
-	appendPQExpBufferStr(&sql, ";\n");
+	appendPQExpBufferStr(&sql, ";");
 
 	conn = connectDatabase(dbname, host, port, username, prompt_password,
 						   progname, false);
@@ -320,7 +320,7 @@ reindex_system_catalogs(const char *dbname, const char *host, const char *port,
 
 	initPQExpBuffer(&sql);
 
-	appendPQExpBuffer(&sql, "REINDEX SYSTEM %s;\n", dbname);
+	appendPQExpBuffer(&sql, "REINDEX SYSTEM %s;", dbname);
 
 	conn = connectDatabase(dbname, host, port, username, prompt_password,
 						   progname, false);

@@ -3,11 +3,11 @@
  * username.c
  *	  get user name
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  src/port/username.c
+ *	  src/common/username.c
  *
  *-------------------------------------------------------------------------
  */
@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 
+#include "common/username.h"
 
 /*
  * Returns the current user name in a static buffer, or NULL on error and
@@ -33,17 +34,17 @@ get_user_name(char **errstr)
 {
 #ifndef WIN32
 	struct passwd *pw;
-	uid_t user_id = geteuid();
+	uid_t		user_id = geteuid();
 
 	*errstr = NULL;
 
-	errno = 0;	/* clear errno before call */
+	errno = 0;					/* clear errno before call */
 	pw = getpwuid(user_id);
 	if (!pw)
 	{
-		*errstr = psprintf(_("failed to look up effective user id %d: %s"),
-				(int) user_id, errno ? strerror(errno) :
-				_("user does not exist"));
+		*errstr = psprintf(_("failed to look up effective user id %ld: %s"),
+						   (long) user_id,
+						 errno ? strerror(errno) : _("user does not exist"));
 		return NULL;
 	}
 

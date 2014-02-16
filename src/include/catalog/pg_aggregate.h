@@ -5,7 +5,7 @@
  *	  along with the relation's initial contents.
  *
  *
- * Portions Copyright (c) 1996-2013, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2014, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/pg_aggregate.h
@@ -258,6 +258,7 @@ DATA(insert ( 3545	n 0 bytea_string_agg_transfn	bytea_string_agg_finalfn	0	2281	
 
 /* json */
 DATA(insert ( 3175	n 0 json_agg_transfn	json_agg_finalfn	0	2281	0	_null_ ));
+DATA(insert ( 3197	n 0 json_object_agg_transfn	json_object_agg_finalfn	0	2281	0	_null_ ));
 
 /* ordered-set and hypothetical-set aggregates */
 DATA(insert ( 3972	o 1 ordered_set_transition			percentile_disc_final					0	2281	0	_null_ ));
