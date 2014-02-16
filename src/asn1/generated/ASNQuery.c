@@ -52,6 +52,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNQuery = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNQuery_t),
 	1,	/* Generated */
-	"asn_DEF_ASNQuery" /* Symbol String */
+	"asn_DEF_ASNQuery", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

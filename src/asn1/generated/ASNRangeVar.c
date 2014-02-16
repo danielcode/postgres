@@ -81,6 +81,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNRangeVar = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNRangeVar_t),
 	1,	/* Generated */
-	"asn_DEF_ASNRangeVar" /* Symbol String */
+	"asn_DEF_ASNRangeVar", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

@@ -25,22 +25,17 @@
 /*
  * ASN.1 related
  */
-#include "nodes/parsenodes.h"
-#include "ASNQuery.h"
 #include "pg-asn1-encode.h"
 
-extern bool PQsendQueryStart(PGconn *conn);
-extern struct transferBuffer *pg_asn1_encode(List *l, int encoding);
-extern void	pg_asn1_buffer_free(struct transferBuffer *transferBuffer);
+extern bool		 PQsendQueryStart(PGconn *conn);
+extern PGresult *PQexecFinish(PGconn *conn);
+extern bool		 PQexecStart(PGconn *conn);
 
 
 int		  PQsendASNQuery(PGconn *conn, const char *query);
 PGresult *PQASNexec(PGconn *conn, const char *query);
 void	  symbol_for_ruby_pg(void);
 
-List	 *raw_parser(const char *);
-PGresult *PQexecFinish(PGconn *conn);
-bool	  PQexecStart(PGconn *conn);
 
 /*
  * PQsendASNQuery
@@ -55,10 +50,12 @@ bool	  PQexecStart(PGconn *conn);
 int
 PQsendASNQuery(PGconn *conn, const char *query)
 {
-	struct transferBuffer *transferBuffer = NULL;
-	List *l = NULL;
+	int encoding = 1;
+	struct bufferInfo bufferInfo;
 
-	int encoding = 0;
+    bufferInfo.buffer = query;
+    bufferInfo.offset = strlen(query);
+    bufferInfo.length = strlen(query);
 
 	/* check the argument */
 	if (!query)
@@ -68,15 +65,11 @@ PQsendASNQuery(PGconn *conn, const char *query)
 		return 0;
 	}
 
-	l = raw_parser(query);
-	transferBuffer = pg_asn1_encode(l, encoding);
-
 	/*
 	 * Almost the same PQsendQuery code
 	 */
 	if (!PQsendQueryStart(conn))
 	{
-		pg_asn1_buffer_free(transferBuffer);
 		return 0;
 	}
 
@@ -84,17 +77,13 @@ PQsendASNQuery(PGconn *conn, const char *query)
 	/* construct the outgoing Query message */
 	if (pqPutMsgStart('A', false, conn) < 0 ||
 		pqPutInt(encoding, 4, conn) < 0 || /* Encoding */
-		pqPutInt(transferBuffer->bufferInfo.offset, 4, conn) < 0 ||
-		pqPutnchar(transferBuffer->bufferInfo.buffer, transferBuffer->bufferInfo.offset, conn) < 0 ||
+		pqPutInt(bufferInfo.offset, 4, conn) < 0 ||
+		pqPutnchar(bufferInfo.buffer, bufferInfo.offset, conn) < 0 ||
 		pqPutMsgEnd(conn) < 0)
 	{
-		pg_asn1_buffer_free(transferBuffer);
 		pqHandleSendFailure(conn);
 		return 0;
 	}
-
-	/* No need to keep the encoded data around anymore */
-	pg_asn1_buffer_free(transferBuffer);
 
 	/* remember we are using simple query protocol */
 	conn->queryclass = PGQUERY_SIMPLE;

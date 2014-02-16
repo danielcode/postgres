@@ -80,6 +80,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNResTarget = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNResTarget_t),
 	1,	/* Generated */
-	"asn_DEF_ASNResTarget" /* Symbol String */
+	"asn_DEF_ASNResTarget", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

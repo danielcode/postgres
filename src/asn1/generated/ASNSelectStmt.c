@@ -53,7 +53,8 @@ asn_TYPE_descriptor_t asn_DEF_targets_2 = {
 	0,	/* Not an Anonymous Type */
 	sizeof(struct targets),
 	1,	/* Generated */
-	"asn_DEF_targets" /* Symbol String */
+	"asn_DEF_targets", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 
 static asn_TYPE_member_t asn_MBR_fromClause_4[] = {
@@ -103,7 +104,8 @@ asn_TYPE_descriptor_t asn_DEF_fromClause_4 = {
 	0,	/* Not an Anonymous Type */
 	sizeof(struct fromClause),
 	1,	/* Generated */
-	"asn_DEF_fromClause" /* Symbol String */
+	"asn_DEF_fromClause", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 
 static asn_TYPE_member_t asn_MBR_ASNSelectStmt_1[] = {
@@ -171,6 +173,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNSelectStmt = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNSelectStmt_t),
 	1,	/* Generated */
-	"asn_DEF_ASNSelectStmt" /* Symbol String */
+	"asn_DEF_ASNSelectStmt", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

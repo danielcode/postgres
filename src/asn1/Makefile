@@ -29,8 +29,8 @@ OBJS 	= ASNBinaryExpression.o ASNBinaryOperator.o ASNColumnRef.o ASNColumnRefIte
 		  NativeEnumerated.o NativeInteger.o NativeReal.o OCTET_STRING.o REAL.o UTF8String.o asn_SEQUENCE_OF.o \
 		  asn_SET_OF.o asn_codecs_prim.o ber_decoder.o ber_tlv_length.o ber_tlv_tag.o constr_CHOICE.o \
 		  constr_SEQUENCE.o constr_SEQUENCE_OF.o constr_SET_OF.o constr_TYPE.o constraints.o der_encoder.o \
-		  per_decoder.o per_encoder.o per_support.o xer_decoder.o xer_encoder.o xer_support.o pg-asn1-encode.o \
-		  tree_to_asn1.o
+		  per_decoder.o per_encoder.o per_support.o per_opentype.o xer_decoder.o xer_encoder.o xer_support.o \
+		  pg-asn1-encode.o tree_to_asn1.o
 
 GENH= generated/ASNBinaryExpression.h generated/ASNBinaryOperator.h generated/ASNColumnRef.h \
 	generated/ASNColumnRefItem.h generated/ASNColumnRefList.h generated/ASNExpression.h generated/ASNFromClause.h \
@@ -43,7 +43,8 @@ GENH= generated/ASNBinaryExpression.h generated/ASNBinaryOperator.h generated/AS
 	generated/ber_tlv_length.h generated/ber_tlv_tag.h generated/constr_CHOICE.h generated/constr_SEQUENCE.h \
 	generated/constr_SEQUENCE_OF.h generated/constr_SET_OF.h generated/constr_TYPE.h generated/constraints.h \
 	generated/der_encoder.h generated/per_decoder.h generated/per_encoder.h generated/per_support.h \
-	generated/xer_decoder.h generated/xer_encoder.h generated/xer_support.h generated/expr_types.h
+	generated/per_opentype.h generated/xer_decoder.h generated/xer_encoder.h generated/xer_support.h \
+	generated/expr_types.h
 
 HEADERS= pg-asn1-encode.h
 
@@ -57,8 +58,8 @@ GENC =	generated/ASNBinaryExpression.c generated/ASNBinaryOperator.c generated/A
 		generated/ber_decoder.c generated/ber_tlv_length.c generated/ber_tlv_tag.c generated/constr_CHOICE.c \
 		generated/constr_SEQUENCE.c generated/constr_SEQUENCE_OF.c generated/constr_SET_OF.c generated/constr_TYPE.c \
 		generated/constraints.c generated/der_encoder.c generated/per_decoder.c generated/per_encoder.c \
-		generated/per_support.c generated/xer_decoder.c generated/xer_encoder.c generated/xer_support.c \
-		generated/expr_types.h
+		generated/per_support.c generated/per_opentype.c generated/xer_decoder.c generated/xer_encoder.c \
+		generated/xer_support.c generated/expr_types.h
 
 SOURCES= pg-asn1-encode.c tree_to_asn1.c
 

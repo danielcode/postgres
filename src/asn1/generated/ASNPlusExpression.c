@@ -75,6 +75,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNPlusExpression = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNPlusExpression_t),
 	1,	/* Generated */
-	"asn_DEF_ASNPlusExpression" /* Symbol String */
+	"asn_DEF_ASNPlusExpression", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

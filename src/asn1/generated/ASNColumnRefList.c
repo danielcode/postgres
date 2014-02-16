@@ -52,6 +52,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNColumnRefList = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNColumnRefList_t),
 	1,	/* Generated */
-	"asn_DEF_ASNColumnRefList" /* Symbol String */
+	"asn_DEF_ASNColumnRefList", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

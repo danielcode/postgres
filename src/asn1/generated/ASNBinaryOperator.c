@@ -164,6 +164,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNBinaryOperator = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNBinaryOperator_t),
 	1,	/* Generated */
-	"asn_DEF_ASNBinaryOperator" /* Symbol String */
+	"asn_DEF_ASNBinaryOperator", /* Symbol String */
+	&ASNBinaryOperator_1_inherit_TYPE_descriptor
 };
 

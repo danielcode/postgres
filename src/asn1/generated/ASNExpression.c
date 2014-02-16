@@ -90,6 +90,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNExpression = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNExpression_t),
 	1,	/* Generated */
-	"asn_DEF_ASNExpression" /* Symbol String */
+	"asn_DEF_ASNExpression", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

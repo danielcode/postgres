@@ -85,6 +85,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNBinaryExpression = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNBinaryExpression_t),
 	1,	/* Generated */
-	"asn_DEF_ASNBinaryExpression" /* Symbol String */
+	"asn_DEF_ASNBinaryExpression", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

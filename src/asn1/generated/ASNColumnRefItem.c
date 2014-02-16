@@ -70,6 +70,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNColumnRefItem = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNColumnRefItem_t),
 	1,	/* Generated */
-	"asn_DEF_ASNColumnRefItem" /* Symbol String */
+	"asn_DEF_ASNColumnRefItem", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

@@ -52,6 +52,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNFromClause = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNFromClause_t),
 	1,	/* Generated */
-	"asn_DEF_ASNFromClause" /* Symbol String */
+	"asn_DEF_ASNFromClause", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

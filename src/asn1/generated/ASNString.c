@@ -70,6 +70,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNString = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNString_t),
 	1,	/* Generated */
-	"asn_DEF_ASNString" /* Symbol String */
+	"asn_DEF_ASNString", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 

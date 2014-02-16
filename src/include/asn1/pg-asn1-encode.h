@@ -19,10 +19,4 @@ typedef struct bufferInfo
 	int		 length;
 } bufferInfo_t;
 
-typedef struct transferBuffer
-{
-	ASNQuery_t	*queryStmt;
-	bufferInfo_t bufferInfo;
-} transferBuffer_t;
-
 #endif

@@ -75,6 +75,7 @@ asn_TYPE_descriptor_t asn_DEF_ASNResTargetExpression = {
 	0,	/* Not an Anonymous Type */
 	sizeof(ASNResTargetExpression_t),
 	1,	/* Generated */
-	"asn_DEF_ASNResTargetExpression" /* Symbol String */
+	"asn_DEF_ASNResTargetExpression", /* Symbol String */
+	(void (*)(struct asn_TYPE_descriptor_s *))NULL
 };
 
