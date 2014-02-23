@@ -50,7 +50,7 @@ void	  symbol_for_ruby_pg(void);
 int
 PQsendASNQuery(PGconn *conn, const char *query)
 {
-	int encoding = 1;
+	int encoding = 0;
 	struct bufferInfo bufferInfo;
 
     bufferInfo.buffer = query;

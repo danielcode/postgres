@@ -10,6 +10,8 @@
  *-------------------------------------------------------------------------
  */
 
+#include <asn1/ASNQuery.h>
+
 #ifndef PGASN1ENCODE
 
 typedef struct bufferInfo
@@ -18,5 +20,11 @@ typedef struct bufferInfo
 	int		 offset;
 	int		 length;
 } bufferInfo_t;
+
+typedef struct transferBuffer
+{
+	ASNQuery_t	*queryStmt;
+	bufferInfo_t bufferInfo;
+} transferBuffer_t;
 
 #endif
