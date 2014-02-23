@@ -32,8 +32,8 @@ extern PGresult *PQexecFinish(PGconn *conn);
 extern bool		 PQexecStart(PGconn *conn);
 
 
-int		  PQsendASNQuery(PGconn *conn, const char *query);
-PGresult *PQASNexec(PGconn *conn, const char *query);
+int		  PQsendASNQuery(PGconn *conn, const char *query, const int msglen);
+PGresult *PQASNexec(PGconn *conn, const char *query, const int msglen);
 void	  symbol_for_ruby_pg(void);
 
 
@@ -48,14 +48,14 @@ void	  symbol_for_ruby_pg(void);
  * XXXXX - when is it safe to free bufferInfo / buffer?
  */
 int
-PQsendASNQuery(PGconn *conn, const char *query)
+PQsendASNQuery(PGconn *conn, const char *query, const int msglen)
 {
-	int encoding = 0;
+	int encoding = 1;
 	struct bufferInfo bufferInfo;
 
     bufferInfo.buffer = query;
-    bufferInfo.offset = strlen(query);
-    bufferInfo.length = strlen(query);
+    bufferInfo.offset = msglen;
+    bufferInfo.length = msglen;
 
 	/* check the argument */
 	if (!query)
@@ -110,11 +110,11 @@ PQsendASNQuery(PGconn *conn, const char *query)
 }
 
 PGresult *
-PQASNexec(PGconn *conn, const char *query) 
+PQASNexec(PGconn *conn, const char *query, const int msglen)
 {
 	if (!PQexecStart(conn))
         return NULL;
-    if (!PQsendASNQuery(conn, query))
+    if (!PQsendASNQuery(conn, query, msglen))
         return NULL;
     return PQexecFinish(conn);
 }
