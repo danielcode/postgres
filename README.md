@@ -1,5 +1,5 @@
-PostgreSQL Wire Protocol Experiment
-===================================
+PostgreSQL Experiment
+=====================
 
 DRAFT
 -----
