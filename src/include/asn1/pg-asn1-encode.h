@@ -10,8 +10,6 @@
  *-------------------------------------------------------------------------
  */
 
-#include <asn1/ASNQuery.h>
-
 #ifndef PGASN1ENCODE
 
 typedef struct bufferInfo

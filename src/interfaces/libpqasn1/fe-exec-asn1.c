@@ -25,6 +25,7 @@
 /*
  * ASN.1 related
  */
+#include "asn1/ASNQuery.h"
 #include "pg-asn1-encode.h"
 
 extern bool		 PQsendQueryStart(PGconn *conn);
@@ -50,7 +51,7 @@ void	  symbol_for_ruby_pg(void);
 int
 PQsendASNQuery(PGconn *conn, const char *query, const int msglen)
 {
-	int encoding = 1;
+	int encoding = 2;
 	struct bufferInfo bufferInfo;
 
     bufferInfo.buffer = query;
